@@ -1,0 +1,8 @@
+torch
+numpy
+tqdm
+gymnasium
+opencv-python
+panda-gym
+PyYAML
+matplotlib
