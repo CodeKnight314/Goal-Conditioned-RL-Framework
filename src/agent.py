@@ -103,7 +103,7 @@ class PandaAgent():
         self.critic_2_opt.step()
         
         if weights:
-            td_error = (current_q1_value - target).detach().cpu().numpy()
+            td_error = 0.5 * (current_q1_value + current_q2_value - 2 * target).detach().cpu().numpy()
             return critic_1_loss.item(), critic_2_loss.item(), td_error
         else: 
             return critic_1_loss.item(), critic_2_loss.item()
