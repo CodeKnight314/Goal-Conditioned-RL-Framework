@@ -1,5 +1,5 @@
 from src.model import Actor, Critic
-from buffer import PERBuffer, ReplayBuffer, HERBuffer
+from src.buffer import PERBuffer, ReplayBuffer, HERBuffer
 import torch 
 from torch.optim import AdamW
 import os 
@@ -34,6 +34,7 @@ class PandaAgent():
         else: 
             raise ValueError(f"[ERROR] Invalid Buffer type. Received {self.config["buffer_type"]}.")
         
+        self.noise_std = self.config["noise_std"]
         self.noise_clamp = self.config["noise_clamp"]
         self.policy_noise = self.config["policy_noise"]
         self.gamma = self.config["gamma"]
@@ -108,12 +109,12 @@ class PandaAgent():
         else: 
             return critic_1_loss.item(), critic_2_loss.item()
 
-    def select_action(self, obs_tensor: np.array, noise_std: float = 0.25, eval_action: bool=False):
+    def select_action(self, obs_tensor: np.array, eval_action: bool=False):
         if not eval_action:
             obs_tensor = torch.as_tensor(obs_tensor, dtype=torch.float32).to(self.device)
             with torch.no_grad(): 
                 action = self.actor(obs_tensor).detach().cpu().numpy()
-            action += np.random.normal(0, noise_std, size=action.shape)
+            action += np.random.normal(0, self.noise_std, size=action.shape)
             action = np.clip(action, -1, 1)
             return action
         else: 
@@ -121,7 +122,7 @@ class PandaAgent():
             with torch.no_grad():
                 return self.actor(obs_tensor).cpu().numpy()
             
-    def push_per(self, state, action, reward, next_state, done):
+    def push(self, state, action, reward, next_state, done):
         self.buffer.push(state, action, reward, next_state, done)
         
     def update(self, step: int):
@@ -142,4 +143,12 @@ class PandaAgent():
         else: 
             return q1_loss, q2_loss
             
+    def save_weights(self, path: str):
+        self.actor.save(os.path.join(path, "actor.pth"))
+        self.critic_1.save(os.path.join(path, "critic_1.pth"))
+        self.critic_2.save(os.path.join(path, "critic_2.pth"))
+        
+    def is_buffer_filled(self):
+        return len(self.buffer) >= self.batch_size
+        
         
