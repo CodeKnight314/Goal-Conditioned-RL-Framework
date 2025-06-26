@@ -32,7 +32,7 @@ class PandaAgent():
         elif self.config["buffer_type"] == "REPLAY":
             self.buffer = ReplayBuffer(self.config["max_len"])
         else: 
-            raise ValueError(f"[ERROR] Invalid Buffer type. Received {self.config["buffer_type"]}.")
+            raise ValueError(f"[ERROR] Invalid Buffer type. Received {self.config['buffer_type']}.")
         
         self.noise_std = self.config["noise_std"]
         self.noise_clamp = self.config["noise_clamp"]
@@ -91,22 +91,24 @@ class PandaAgent():
         current_q2_value = self.critic_2(current_critic_input)
         
         self.critic_1_opt.zero_grad()
-        if weights:
-            critic_1_loss = weights * torch.nn.functional.mse_loss(current_q1_value, target)
+        if weights is not None and weights.numel() > 0:
+            critic_1_loss = torch.nn.functional.mse_loss(current_q1_value, target, reduction='none')
+            critic_1_loss = (weights * critic_1_loss).mean()
         else: 
             critic_1_loss = torch.nn.functional.mse_loss(current_q1_value, target)
         critic_1_loss.backward()
         self.critic_1_opt.step()
         
         self.critic_2_opt.zero_grad()
-        if weights:
-            critic_2_loss = weights * torch.nn.functional.mse_loss(current_q2_value, target)
+        if weights is not None and weights.numel() > 0:
+            critic_2_loss = torch.nn.functional.mse_loss(current_q2_value, target, reduction='none')
+            critic_2_loss = (weights * critic_2_loss).mean()
         else: 
             critic_2_loss = torch.nn.functional.mse_loss(current_q2_value, target)
         critic_2_loss.backward()
         self.critic_2_opt.step()
         
-        if weights:
+        if weights is not None and weights.numel() > 0:
             td_error = 0.5 * (current_q1_value + current_q2_value - 2 * target).detach().cpu().numpy()
             return critic_1_loss.item(), critic_2_loss.item(), td_error
         else: 
@@ -128,10 +130,10 @@ class PandaAgent():
     def push(self, state, action, reward, next_state, done):
         self.buffer.push(state, action, reward, next_state, done)
         
-    def update(self, step: int):
+    def update(self, step: int, beta: float = 0.7):
         ac_loss = None
         if isinstance(self.buffer, PERBuffer):
-            states, actions, rewards, next_states, dones, weights, indices = self.buffer.sample(self.batch_size)
+            states, actions, rewards, next_states, dones, weights, indices = self.buffer.sample(self.batch_size, beta)
             q1_loss, q2_loss, td_error = self.critic_update(states, actions, rewards, next_states, dones, weights) 
             self.buffer.update_priorities(indices=indices, priorities=td_error)
         else: 
@@ -154,5 +156,3 @@ class PandaAgent():
         
     def is_buffer_filled(self):
         return len(self.buffer) >= self.batch_size
-        
-        
