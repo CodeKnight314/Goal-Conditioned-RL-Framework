@@ -30,18 +30,32 @@ class PandasEnv():
         self.verbose = verbose
         self.best_reward = 0.0
         self.env_id = env_id
+        self.beta = self.config["beta_start"]
+        self.beta_start = self.config["beta_start"]
+        self.beta_interval = self.config["beta_interval"]
         
         self.env = gym.vector.AsyncVectorEnv(
-            [lambda: gym.make(env_id, render_mode=None) for _ in range(self.num_envs)],
+            [lambda: gym.make(env_id) for _ in range(self.num_envs)],
             autoreset_mode=gym.vector.AutoresetMode.NEXT_STEP
         )
         
-        self.obs_dim = self.env.single_observation_space.shape[0]
-        self.ac_dim = self.env.single_action_space.shape[0]
+        obs_space = self.env.observation_space
+        act_space = self.env.action_space
+        
+        ag_dim = obs_space['achieved_goal'].shape[1]
+        dg_dim = obs_space['desired_goal'].shape[1]
+        obs_dim = obs_space['observation'].shape[1]
+        
+        ac_dim = act_space.shape[1]
+        
+        self.obs_dim = obs_dim
+        self.ag_dim = ag_dim
+        self.dg_dim = dg_dim
+        self.ac_dim = ac_dim
         
         self.agent = PandaAgent(
             config=self.agent_config,
-            obs_dim=self.obs_dim,
+            obs_dim=self.obs_dim + self.dg_dim,
             ac_dim=self.ac_dim,
             weights=weights
         )
@@ -56,36 +70,44 @@ class PandasEnv():
     def set_seed(self, seed: int):
         torch.manual_seed(seed)
         np.random.seed(seed)
+        
+    def beta_scheduler(self, steps: int):
+        new_beta = self.beta_start + (1.0 / self.beta_interval) * steps
+        self.beta = min(1.0, new_beta)
     
     def train(self, path: str):
         logger.info(f"Starting training process. Model will be saved to: {path}")
         os.makedirs(path, exist_ok=True)
         
         total_frames = 0
-        obs, _ = self.env.reset()  
-        state = obs["observation"]
+        state, _ = self.env.reset()  
         episode_rewards = np.zeros(self.num_envs, dtype=float)
         pbar = tqdm(total=self.config["max_frames"], desc="Frames")
         
         while total_frames < self.config["max_frames"]:
-            if self.agent.is_buffer_filled():
+            if not self.agent.is_buffer_filled():
                 actions = self.env.action_space.sample()
             else:
-                actions = []
-                for i in range(self.num_envs):
-                    a_i = self.agent.select_action(state)
-                    actions.append(a_i)
-                    
+                state_input = np.concatenate([state["observation"], state["desired_goal"]], axis=-1)
+                actions = self.agent.select_action(state_input)
                 actions = np.array(actions, dtype=np.float32)
                 
             next_obs_raw, rewards, terminateds, truncateds, _ = self.env.step(actions)
             dones = np.logical_or(terminateds, truncateds)
+            obs_np = np.concatenate([state["observation"], state["desired_goal"]], axis=-1)
+            next_np = np.concatenate([next_obs_raw["observation"], next_obs_raw["desired_goal"]], axis=-1)
+
+            obs_batch = torch.from_numpy(obs_np).float().to(self.device)
+            next_obs_batch = torch.from_numpy(next_np).float().to(self.device)
             
             for i in range(self.num_envs):
-                obs = torch.as_tensor(state[i], dtype=torch.float32).to(self.device)
-                next_obs = torch.as_tensor(next_obs_raw["observation"][i], dtype=torch.float32).to(self.device)
-                
-                self.agent.push(obs, actions[i], rewards[i], next_obs, dones[i])
+                self.agent.push(
+                    obs_batch[i],
+                    actions[i],
+                    rewards[i],
+                    next_obs_batch[i],
+                    dones[i],
+                )
                 episode_rewards[i] += rewards[i]
                 
                 if dones[i]:
@@ -94,21 +116,22 @@ class PandasEnv():
                     
                 total_frames += 1
                 
-                if self.agent.is_buffer_filled(): 
-                    info = self.agent.update(total_frames)
-                    if len(info) == 3: 
-                        q1_loss, q2_loss, ac_loss = info
-                        self.history["ac_loss"].append(ac_loss)
-                    else: 
-                        q1_loss, q2_loss = info
-                    self.history["q1_loss"].append(q1_loss)
-                    self.history["q2_loss"].append(q2_loss)
-                
                 if total_frames % self.save_freq == 0:
                     checkpoint_path = os.path.join(path, f"checkpoint")
                     self.agent.save_weights(checkpoint_path)
                     if self.verbose:
                         logger.info(f"Checkpoint saved at frame {total_frames}")
+                        
+            if self.agent.is_buffer_filled(): 
+                self.beta_scheduler()
+                info = self.agent.update(step=total_frames//self.num_envs, beta=self.beta)
+                if len(info) == 3: 
+                    q1_loss, q2_loss, ac_loss = info
+                    self.history["ac_loss"].append(ac_loss)
+                else: 
+                    q1_loss, q2_loss = info
+                self.history["q1_loss"].append(q1_loss)
+                self.history["q2_loss"].append(q2_loss)
                         
             pbar.update(self.num_envs)
             
@@ -122,7 +145,7 @@ class PandasEnv():
                     if self.verbose:
                         logger.info(f"New best model saved! Average reward: {recent_reward_avg:.2f}")
 
-            state = next_obs_raw["observation"]
+            state = next_obs_raw
 
             pbar_rewards = np.mean(self.history['reward']) if len(self.history["reward"]) > 0 else 0.0
             pbar_loss = np.mean(self.history['ac_loss']) if len(self.history["ac_loss"]) > 0 else 0.0
