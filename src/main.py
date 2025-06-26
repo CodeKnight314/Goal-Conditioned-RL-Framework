@@ -29,3 +29,5 @@ if __name__ == "__main__":
     parser.add_argument("--num_episodes", type=int, default=1, help="Number of episodes to run for testing")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging and rendering")
     args = parser.parse_args()
+
+    main(args)
