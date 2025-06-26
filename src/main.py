@@ -27,5 +27,5 @@ if __name__ == "__main__":
     parser.add_argument("--mode", type=str, default="train", choices=["train", "test"], help="Mode to run environment in")
     parser.add_argument("--n", type=int, default=32, help="Number of parallel environments to run concurrently")
     parser.add_argument("--num_episodes", type=int, default=1, help="Number of episodes to run for testing")
-    parser.add_argument("--verbose", action="store_true", help="Render the Tetris game")
+    parser.add_argument("--verbose", action="store_true", help="Enable verbose logging and rendering")
     args = parser.parse_args()
