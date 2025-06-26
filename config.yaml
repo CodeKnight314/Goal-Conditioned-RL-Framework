@@ -1,0 +1,25 @@
+max_frames: 10000000
+save_freq: 50000
+window_size: 100
+beta_start: 0.4
+beta_end: 1.0
+beta_interval: 10000
+
+agent:
+  hidden_dim: 256
+  layer_count: 3
+  
+  actor_lr: 0.001
+  critic_lr: 0.001
+  
+  buffer_type: "PER"
+  max_len: 1000000
+  alpha: 0.6
+  
+  batch_size: 512
+  gamma: 0.99
+  ac_update_freq: 2
+  
+  noise_std: 0.1
+  noise_clamp: 0.5
+  policy_noise: 0.2
