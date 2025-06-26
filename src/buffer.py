@@ -59,11 +59,11 @@ class PERBuffer():
         weights /= weights.max()
         
         states = torch.stack([s.clone().detach() for s in states]).to(self.device)
-        actions = torch.tensor(actions, dtype=torch.float32).to(self.device)
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        actions = torch.tensor(np.array(actions), dtype=torch.float32).to(self.device)
+        rewards = torch.tensor(rewards, dtype=torch.float32).unsqueeze(-1).to(self.device)
         next_states = torch.stack([s.clone().detach() for s in next_states]).to(self.device)
-        dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
-        weights = torch.as_tensor(weights, dtype=torch.float32).to(self.device)
+        dones = torch.tensor(dones, dtype=torch.float32).unsqueeze(-1).to(self.device)
+        weights = torch.as_tensor(weights, dtype=torch.float32).unsqueeze(-1).to(self.device)
         
         return states, actions, rewards, next_states, dones, weights, indices
     
@@ -71,6 +71,7 @@ class PERBuffer():
         return len(self.buffer)
     
     def update_priorities(self, indices, priorities):
+        priorities = priorities.squeeze(-1)
         for index, priority in zip(indices, priorities):
             self.priorities[index] = (abs(priority) + self.epsilon) ** self.alpha
             
@@ -123,5 +124,3 @@ class HERBuffer():
                 
                 new_r = self.compute_reward(ag, future_ag)
                 self.buffer.append((s, a, ns, new_r, d, future_ag, ag))
-    
-    
