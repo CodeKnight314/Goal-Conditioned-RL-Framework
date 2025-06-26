@@ -36,8 +36,8 @@ class PandasEnv():
             autoreset_mode=gym.vector.AutoresetMode.NEXT_STEP
         )
         
-        self.obs_dim = self.env.observation_space[0].n
-        self.ac_dim = self.env.action_space[0].n
+        self.obs_dim = self.env.single_observation_space.shape[0]
+        self.ac_dim = self.env.single_action_space.shape[0]
         
         self.agent = PandaAgent(
             config=self.agent_config,
@@ -78,18 +78,18 @@ class PandasEnv():
                     
                 actions = np.array(actions, dtype=np.float32)
                 
-            next_state, rewards, terminateds, truncateds, _ = self.env.step(actions)
+            next_obs_raw, rewards, terminateds, truncateds, _ = self.env.step(actions)
             dones = np.logical_or(terminateds, truncateds)
             
             for i in range(self.num_envs):
-                obs = torch.as_tensor(state, dtype=torch.float32).to(self.device)
-                next_obs = torch.as_tensor(next_state, dtype=torch.float32).to(self.device)
+                obs = torch.as_tensor(state[i], dtype=torch.float32).to(self.device)
+                next_obs = torch.as_tensor(next_obs_raw["observation"][i], dtype=torch.float32).to(self.device)
                 
                 self.agent.push(obs, actions[i], rewards[i], next_obs, dones[i])
                 episode_rewards[i] += rewards[i]
                 
                 if dones[i]:
-                    self.history["rewards"].append(episode_rewards[i])
+                    self.history["reward"].append(episode_rewards[i])
                     episode_rewards[i] = 0.0
                     
                 total_frames += 1
@@ -122,10 +122,10 @@ class PandasEnv():
                     if self.verbose:
                         logger.info(f"New best model saved! Average reward: {recent_reward_avg:.2f}")
 
-            state = next_state
+            state = next_obs_raw["observation"]
 
             pbar_rewards = np.mean(self.history['reward']) if len(self.history["reward"]) > 0 else 0.0
-            pbar_loss = np.mean(self.history['loss']) if len(self.history["reward"]) > 0 else 0.0
+            pbar_loss = np.mean(self.history['ac_loss']) if len(self.history["ac_loss"]) > 0 else 0.0
             pbar.set_postfix(
                 reward=f"{pbar_rewards:.4f}", 
                 loss=f"{pbar_loss:.4f}", 
@@ -149,7 +149,7 @@ class PandasEnv():
         height, width, _ = frame.shape
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-        video_path = os.path.join(path, "tetris.mp4")
+        video_path = os.path.join(path, "panda_manipulation.mp4")
         video = cv2.VideoWriter(video_path, fourcc, 60, (width, height))
 
         total_rewards = 0
@@ -164,7 +164,7 @@ class PandasEnv():
             while not done:
                 frame = env.render()
 
-                action = self.agent.select_action(state, eval_action=True)
+                action = self.agent.select_action(state["observation"], eval_action=True)
                 video.write(frame)
 
                 state, reward, terminated, truncated, _ = env.step(action)
