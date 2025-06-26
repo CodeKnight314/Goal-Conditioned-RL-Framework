@@ -18,7 +18,7 @@ class ReplayBuffer():
         states, actions, rewards, next_states, dones = zip(*batches)
         
         states = torch.stack([s.clone().detach() for s in states]).to(self.device)
-        actions = torch.tensor(actions, dtype=torch.long).to(self.device)
+        actions = torch.tensor(actions, dtype=torch.float32).to(self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         next_states = torch.stack([s.clone().detach() for s in next_states]).to(self.device)
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
@@ -59,7 +59,7 @@ class PERBuffer():
         weights /= weights.max()
         
         states = torch.stack([s.clone().detach() for s in states]).to(self.device)
-        actions = torch.tensor(actions, dtype=torch.long).to(self.device)
+        actions = torch.tensor(actions, dtype=torch.float32).to(self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
         next_states = torch.stack([s.clone().detach() for s in next_states]).to(self.device)
         dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
@@ -105,6 +105,9 @@ class HERBuffer():
         
         return states, actions, rewards, next_states, dones, desired_goals, achieved_goals
     
+    def __len__(self):
+        return len(self.buffer)
+
     def compute_reward(self, desired_goals, achieved_goals):
         return float(np.linalg.norm(achieved_goals - desired_goals) < self.threshold)
     
