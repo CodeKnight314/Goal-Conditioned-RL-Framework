@@ -45,6 +45,9 @@ class PandaAgent():
             self.actor.load(os.path.join(weights, "actor.pth"))
             self.critic_1.load(os.path.join(weights, "critic_1.pth"))
             self.critic_2.load(os.path.join(weights, "critic_2.pth"))
+            self.target_actor.load_state_dict(self.actor.state_dict())
+            self.target_critic_1.load_state_dict(self.critic_1.state_dict())
+            self.target_critic_2.load_state_dict(self.critic_2.state_dict())
         
     def update_target_network(self, hard_update: bool = True, tau: float = 0.05):
         if hard_update: 
@@ -126,6 +129,7 @@ class PandaAgent():
         self.buffer.push(state, action, reward, next_state, done)
         
     def update(self, step: int):
+        ac_loss = None
         if isinstance(self.buffer, PERBuffer):
             states, actions, rewards, next_states, dones, weights, indices = self.buffer.sample(self.batch_size)
             q1_loss, q2_loss, td_error = self.critic_update(states, actions, rewards, next_states, dones, weights) 
