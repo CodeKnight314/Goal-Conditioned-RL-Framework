@@ -1,2 +1,3 @@
-# panda-manipulation-RL
-Multi-task reinforcement learning agents for Franka Emika Panda manipulation tasks using joint control and dense-to-sparse reward training.
+# Panda Manipulation RL
+
+This project implements a reinforcement learning environment for controlling a Panda robot arm for manipulation tasks.
