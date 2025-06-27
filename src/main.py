@@ -10,11 +10,11 @@ MAPPING = {
 }
 
 def main(args):
-    env = PandasEnv(MAPPING[args.id], args.c, args.n, args.w, args.verbose)
+    env = PandasEnv(MAPPING[args.id], args.c, args.nenv, args.w, args.verbose)
     if args.mode == "train":
         env.train(args.o)
     elif args.mode == "test":
-        env.test(args.o, args.num_episodes)
+        env.test(args.o, args.neps)
     else: 
         raise ValueError("[ERROR] invalid mode chosen for running main script")
 
@@ -25,8 +25,8 @@ if __name__ == "__main__":
     parser.add_argument("--o", type=str, required=True, help="Path to output directory for environment")
     parser.add_argument("--w", type=str, help="Path to directory containing actor.pth, critic_1.pth, critic_2.pth")
     parser.add_argument("--mode", type=str, default="train", choices=["train", "test"], help="Mode to run environment in")
-    parser.add_argument("--n", type=int, default=32, help="Number of parallel environments to run concurrently")
-    parser.add_argument("--num_episodes", type=int, default=1, help="Number of episodes to run for testing")
+    parser.add_argument("--nenv", type=int, default=32, help="Number of parallel environments to run concurrently")
+    parser.add_argument("--neps", type=int, default=10, help="Number of episodes to run for testing")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging and rendering")
     args = parser.parse_args()
 
