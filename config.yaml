@@ -1,25 +1,39 @@
-max_frames: 10000000
-save_freq: 50000
+max_frames: 2000000
+save_freq: 100000
 window_size: 100
-beta_start: 0.4
-beta_end: 1.0
-beta_interval: 10000
 
 agent:
   hidden_dim: 256
   layer_count: 3
-  
+
   actor_lr: 0.001
+  actor_lr_min: 0.0001
+  ac_scheduler_steps: 10000
+
   critic_lr: 0.001
-  
-  buffer_type: "PER"
-  max_len: 1000000
+  critic_lr_min: 0.0001
+  cr_scheduler_steps: 10000
+
+  buffer_type: "PER_SUMTREE"
+  max_len: 1048576
   alpha: 0.6
-  
+
   batch_size: 512
-  gamma: 0.99
+  gamma: 0.995
   ac_update_freq: 2
-  
+
   noise_std: 0.1
+  noise_std_min: 0.01
+  noise_std_max: 0.1
+  noise_std_end: 10000
+
   noise_clamp: 0.5
+  noise_clamp_min: 0.1
+  noise_clamp_end: 10000
+
   policy_noise: 0.2
+  smooth_coeff: 0.003
+  grad_clip: 1.5
+
+  beta: 0.4
+  beta_end: 10000
