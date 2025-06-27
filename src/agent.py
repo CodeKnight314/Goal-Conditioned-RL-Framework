@@ -1,7 +1,7 @@
 from src.model import Actor, Critic
-from src.buffer import PERBuffer, ReplayBuffer, HERBuffer
+from src.buffer import PERBuffer, ReplayBuffer, HERBuffer, PERBufferSumTree
 import torch 
-from torch.optim import AdamW
+from torch.optim import AdamW, lr_scheduler
 import os 
 import numpy as np 
 
@@ -27,24 +27,45 @@ class PandaAgent():
         self.critic_1_opt = AdamW(self.critic_1.parameters(), self.config["critic_lr"])
         self.critic_2_opt = AdamW(self.critic_2.parameters(), self.config["critic_lr"])
         
+        self.actor_scheduler = lr_scheduler.CosineAnnealingLR(self.actor_opt, T_max=self.config["ac_scheduler_steps"], eta_min=self.config["actor_lr_min"])
+        self.critic_1_scheduler = lr_scheduler.CosineAnnealingLR(self.critic_1_opt, T_max=self.config["cr_scheduler_steps"], eta_min=self.config["critic_lr_min"])
+        self.critic_2_scheduler = lr_scheduler.CosineAnnealingLR(self.critic_2_opt, T_max=self.config["cr_scheduler_steps"], eta_min=self.config["critic_lr_min"])
+        
         if self.config["buffer_type"] == "PER":
             self.buffer = PERBuffer(self.config["max_len"], self.config["alpha"])
+        elif self.config["buffer_type"] == "PER_SUMTREE":
+            self.buffer = PERBufferSumTree(self.config["max_len"], self.config["alpha"])
         elif self.config["buffer_type"] == "REPLAY":
             self.buffer = ReplayBuffer(self.config["max_len"])
         else: 
             raise ValueError(f"[ERROR] Invalid Buffer type. Received {self.config['buffer_type']}.")
         
         self.noise_std = self.config["noise_std"]
+        self.noise_std_start = self.config["noise_std"]
+        self.noise_std_min = self.config["noise_std_min"]
+        self.noise_std_end = self.config["noise_std_end"]
+        
         self.noise_clamp = self.config["noise_clamp"]
+        self.noise_clamp_start = self.config["noise_clamp"]
+        self.noise_clamp_min = self.config["noise_clamp_min"]
+        self.noise_clamp_end = self.config["noise_clamp_end"]
+        
+        self.beta = self.config["beta"]
+        self.beta_start = self.config["beta"]
+        self.beta_max = 1.0
+        self.beta_end = self.config["beta_end"]
+        
         self.policy_noise = self.config["policy_noise"]
         self.gamma = self.config["gamma"]
         self.batch_size = self.config["batch_size"]
         self.ac_update_freq = self.config["ac_update_freq"]
+        self.ac_smoothing_coeff = self.config["smooth_coeff"]
+        self.grad_clip = self.config["grad_clip"]
         
         if weights: 
-            self.actor.load(os.path.join(weights, "actor.pth"))
-            self.critic_1.load(os.path.join(weights, "critic_1.pth"))
-            self.critic_2.load(os.path.join(weights, "critic_2.pth"))
+            self.actor.load(os.path.join(weights, "actor.pth"), self.device)
+            self.critic_1.load(os.path.join(weights, "critic_1.pth"), self.device)
+            self.critic_2.load(os.path.join(weights, "critic_2.pth"), self.device)
             self.target_actor.load_state_dict(self.actor.state_dict())
             self.target_critic_1.load_state_dict(self.critic_1.state_dict())
             self.target_critic_2.load_state_dict(self.critic_2.state_dict())
@@ -66,13 +87,36 @@ class PandaAgent():
                 
     def actor_update(self, states: torch.Tensor):
         actions = self.actor(states)
-        actor_loss = -self.critic_1(torch.cat([states, actions], dim=-1)).mean()
+        smoothing_loss = (actions ** 2).mean()
+        actor_loss = -self.critic_1(torch.cat([states, actions], dim=-1)).mean() + self.ac_smoothing_coeff * smoothing_loss
         
         self.actor_opt.zero_grad()
+        torch.nn.utils.clip_grad_norm_(self.actor.parameters(), max_norm=self.grad_clip)
         actor_loss.backward()
         self.actor_opt.step()
         
+        self.actor_scheduler.step()
+        
         return actor_loss.item()
+    
+    def scheduler(self, step: int):
+        ratio = step / self.noise_std_end
+        self.noise_std = max(
+            self.noise_std_min,
+            self.noise_std_start - ratio * (self.noise_std_start - self.noise_std_min)
+        )
+
+        ratio = step / self.noise_clamp_end
+        self.noise_clamp = max(
+            self.noise_clamp_min,
+            self.noise_clamp_start - ratio * (self.noise_clamp_start - self.noise_clamp_min)
+        )
+
+        ratio = step / self.beta_end
+        self.beta = min(
+            self.beta_max,
+            self.beta_start + ratio * (self.beta_max - self.beta_start)
+        )
     
     def critic_update(self, state: torch.Tensor, action: torch.Tensor, reward: torch.Tensor, next_state: torch.Tensor, done: torch.Tensor, weights: torch.Tensor=None):
         with torch.no_grad():
@@ -96,6 +140,7 @@ class PandaAgent():
             critic_1_loss = (weights * critic_1_loss).mean()
         else: 
             critic_1_loss = torch.nn.functional.mse_loss(current_q1_value, target)
+        torch.nn.utils.clip_grad_norm_(self.critic_1.parameters(), self.grad_clip)
         critic_1_loss.backward()
         self.critic_1_opt.step()
         
@@ -105,8 +150,12 @@ class PandaAgent():
             critic_2_loss = (weights * critic_2_loss).mean()
         else: 
             critic_2_loss = torch.nn.functional.mse_loss(current_q2_value, target)
+        torch.nn.utils.clip_grad_norm_(self.critic_2.parameters(), self.grad_clip)
         critic_2_loss.backward()
         self.critic_2_opt.step()
+        
+        self.critic_1_scheduler.step()
+        self.critic_2_scheduler.step()
         
         if weights is not None and weights.numel() > 0:
             td_error = 0.5 * (current_q1_value + current_q2_value - 2 * target).detach().cpu().numpy()
@@ -130,10 +179,12 @@ class PandaAgent():
     def push(self, state, action, reward, next_state, done):
         self.buffer.push(state, action, reward, next_state, done)
         
-    def update(self, step: int, beta: float = 0.7):
+    def update(self, step: int):
+        self.scheduler(step)
+        
         ac_loss = None
-        if isinstance(self.buffer, PERBuffer):
-            states, actions, rewards, next_states, dones, weights, indices = self.buffer.sample(self.batch_size, beta)
+        if isinstance(self.buffer, PERBuffer) or isinstance(self.buffer, PERBufferSumTree):
+            states, actions, rewards, next_states, dones, weights, indices = self.buffer.sample(self.batch_size, self.beta)
             q1_loss, q2_loss, td_error = self.critic_update(states, actions, rewards, next_states, dones, weights) 
             self.buffer.update_priorities(indices=indices, priorities=td_error)
         else: 
