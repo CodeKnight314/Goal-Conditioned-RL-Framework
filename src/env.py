@@ -30,9 +30,6 @@ class PandasEnv():
         self.verbose = verbose
         self.best_reward = 0.0
         self.env_id = env_id
-        self.beta = self.config["beta_start"]
-        self.beta_start = self.config["beta_start"]
-        self.beta_interval = self.config["beta_interval"]
         
         self.env = gym.vector.AsyncVectorEnv(
             [lambda: gym.make(env_id) for _ in range(self.num_envs)],
@@ -55,7 +52,7 @@ class PandasEnv():
         
         self.agent = PandaAgent(
             config=self.agent_config,
-            obs_dim=self.obs_dim + self.dg_dim,
+            obs_dim=self.obs_dim + self.dg_dim + self.ag_dim,
             ac_dim=self.ac_dim,
             weights=weights
         )
@@ -70,10 +67,6 @@ class PandasEnv():
     def set_seed(self, seed: int):
         torch.manual_seed(seed)
         np.random.seed(seed)
-        
-    def beta_scheduler(self, steps: int):
-        new_beta = self.beta_start + (1.0 / self.beta_interval) * steps
-        self.beta = min(1.0, new_beta)
     
     def train(self, path: str):
         logger.info(f"Starting training process. Model will be saved to: {path}")
@@ -88,14 +81,14 @@ class PandasEnv():
             if not self.agent.is_buffer_filled():
                 actions = self.env.action_space.sample()
             else:
-                state_input = np.concatenate([state["observation"], state["desired_goal"]], axis=-1)
+                state_input = np.concatenate([state["observation"], state["desired_goal"], state["achieved_goal"]], axis=-1)
                 actions = self.agent.select_action(state_input)
                 actions = np.array(actions, dtype=np.float32)
                 
             next_obs_raw, rewards, terminateds, truncateds, _ = self.env.step(actions)
             dones = np.logical_or(terminateds, truncateds)
-            obs_np = np.concatenate([state["observation"], state["desired_goal"]], axis=-1)
-            next_np = np.concatenate([next_obs_raw["observation"], next_obs_raw["desired_goal"]], axis=-1)
+            obs_np = np.concatenate([state["observation"], state["desired_goal"], state["achieved_goal"]], axis=-1)
+            next_np = np.concatenate([next_obs_raw["observation"], next_obs_raw["desired_goal"], next_obs_raw["achieved_goal"]], axis=-1)
 
             obs_batch = torch.from_numpy(obs_np).float().to(self.device)
             next_obs_batch = torch.from_numpy(next_np).float().to(self.device)
@@ -117,14 +110,12 @@ class PandasEnv():
                 total_frames += 1
                 
                 if total_frames % self.save_freq == 0:
-                    checkpoint_path = os.path.join(path, f"checkpoint")
-                    self.agent.save_weights(checkpoint_path)
+                    self.agent.save_weights(os.path.join(path, f"checkpoint"))
                     if self.verbose:
                         logger.info(f"Checkpoint saved at frame {total_frames}")
                         
             if self.agent.is_buffer_filled(): 
-                self.beta_scheduler()
-                info = self.agent.update(step=total_frames//self.num_envs, beta=self.beta)
+                info = self.agent.update(step=total_frames//self.num_envs)
                 if len(info) == 3: 
                     q1_loss, q2_loss, ac_loss = info
                     self.history["ac_loss"].append(ac_loss)
@@ -161,10 +152,10 @@ class PandasEnv():
         
         return np.mean(self.history['reward'])
                     
-    def test(self, path: str, num_episodes: int):
+    def test(self, path: str, num_episodes: int, smooth: bool = True, alpha: float = 0.65):
         os.makedirs(path, exist_ok=True)
 
-        env = gym.make(self.env_id, render_mode="rgb_array")
+        env = gym.make(self.env_id, render_mode="rgb_array", render_width=1280, render_height=720)
         self.agent.actor.eval()
 
         state, _ = env.reset()
@@ -173,13 +164,15 @@ class PandasEnv():
 
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         video_path = os.path.join(path, "panda_manipulation.mp4")
-        video = cv2.VideoWriter(video_path, fourcc, 60, (width, height))
+        FPS = 20
+        video = cv2.VideoWriter(video_path, fourcc, FPS, (width, height))
 
         total_rewards = 0
         total_steps = 0
 
         for i in range(num_episodes):
             state, _ = env.reset()
+            prev_action = None
             done = False
             rewards = 0
             steps = 0
@@ -187,13 +180,23 @@ class PandasEnv():
             while not done:
                 frame = env.render()
 
-                action = self.agent.select_action(state["observation"], eval_action=True)
+                action = self.agent.select_action(
+                    np.concatenate([state["observation"], state["desired_goal"]], axis=-1), 
+                    eval_action=True)
+
+                if smooth and prev_action is not None: 
+                    action = alpha * prev_action + (1 - alpha) * action
                 video.write(frame)
 
                 state, reward, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated
+                prev_action = action
                 rewards += reward
                 steps += 1
+                
+                if done: 
+                    for i in range(FPS):
+                        video.write(frame)
 
             if self.verbose:
                 logger.info(f"Episode {i + 1} - Reward: {rewards:.2f} - Steps: {steps}")
