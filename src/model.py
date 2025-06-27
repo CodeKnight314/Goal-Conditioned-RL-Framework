@@ -1,6 +1,6 @@
 import torch 
 import torch.nn as nn
-from typing import List
+import os
 
 class Actor(nn.Module):
     def __init__(self, obs_dim: int, hidden_dim: int, ac_dim: int, layer_stack: int = 4):
@@ -23,10 +23,11 @@ class Actor(nn.Module):
     def forward(self, x: torch.Tensor):
         return self.net(x)
 
-    def load(self, weights: str):
-        self.load_state_dict(torch.load(weights))
+    def load(self, weights: str, device: str="cuda"):
+        self.load_state_dict(torch.load(weights, map_location=torch.device(device)))
         
     def save(self, path: str):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(self.state_dict(), path)
         
 class Critic(nn.Module):
@@ -49,8 +50,9 @@ class Critic(nn.Module):
     def forward(self, x: torch.Tensor):
         return self.net(x)
 
-    def load(self, weights: str):
-        self.load_state_dict(torch.load(weights))
+    def load(self, weights: str, device: str="cuda"):
+        self.load_state_dict(torch.load(weights, map_location=torch.device(device)))
         
     def save(self, path: str):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(self.state_dict(), path)
