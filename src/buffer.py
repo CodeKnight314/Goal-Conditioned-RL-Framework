@@ -173,51 +173,50 @@ class PERBufferSumTree:
             self.max_priority = max(self.max_priority, new_p)
             
 class HERBuffer():
-    def __init__(self, max_mem_len: int, max_eps_len: int, threshold: float = 0.05, k_future: int = 2):
+    def __init__(self, max_mem_len: int, max_eps_len: int, nenvs: int, threshold: float = 0.05, k_future: int = 2):
         self.buffer = deque(maxlen=max_mem_len)
-        self.episodes = deque(maxlen=max_eps_len)
+        self.episodes = [deque(maxlen=max_eps_len) for _ in range(nenvs)]
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.threshold = threshold
         self.k_future = k_future
         
-    def push(self, state, action, next_state, reward, done, desired_goal, achieved_goal):
-        self.episodes.append((state, action, next_state, reward, done, desired_goal, achieved_goal))
+    def push(self, idx, state, action, next_state, reward, done, desired_goal, achieved_goal):
+        self.episodes[idx].append((state, action, next_state, reward, done, desired_goal, achieved_goal))
         
         if done: 
-            self.apply_her()
-            self.episodes.clear()
+            self.apply_her(idx)
+            self.episodes[idx].clear()
         
     def sample(self, batch_size: int):
-        assert len(self.buffer) >= batch_size, "Not enough in buffer to sample"
+        assert len(self.buffer) >= batch_size, "[ERROR] Not enough in buffer to sample"
 
         batches = random.sample(self.buffer, batch_size)
-        states, actions, next_states, rewards, dones, desired_goals, achieved_goals = zip(*batches)
+        states, actions, next_states, rewards, dones, _, _ = zip(*batches)
         
         states = torch.stack([s.clone().detach() for s in states]).to(self.device)
-        actions = torch.tensor(actions, dtype=torch.long).to(self.device)
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        actions = torch.tensor(np.array(actions), dtype=torch.float32).to(self.device)
+        rewards = torch.tensor(rewards, dtype=torch.float32).unsqueeze(-1).to(self.device)
         next_states = torch.stack([s.clone().detach() for s in next_states]).to(self.device)
-        dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
-        desired_goals = torch.tensor(desired_goals, dtype=torch.float32).to(self.device)
-        achieved_goals = torch.tensor(achieved_goals, dtype=torch.float32).to(self.device)
-        
-        return states, actions, rewards, next_states, dones, desired_goals, achieved_goals
+        dones = torch.tensor(dones, dtype=torch.float32).unsqueeze(-1).to(self.device)
+       
+        return states, actions, rewards, next_states, dones
     
     def __len__(self):
         return len(self.buffer)
 
     def compute_reward(self, desired_goals, achieved_goals):
-        return float(np.linalg.norm(achieved_goals - desired_goals) < self.threshold)
+        dist = np.linalg.norm(achieved_goals - desired_goals)
+        return 0.0 if dist < self.threshold else -1.0
     
-    def apply_her(self):
-        eps_len = len(self.episodes)
+    def apply_her(self, idx: int):
+        eps_len = len(self.episodes[idx])
         
-        for i, (s, a, ns, r, d, dg, ag) in enumerate(self.episodes):
+        for i, (s, a, ns, r, d, dg, ag) in enumerate(self.episodes[idx]):
             self.buffer.append((s, a, ns, r, d, dg, ag))
             
             for _ in range(self.k_future):
                 future_idx = np.random.randint(i, eps_len)
-                future_ag = self.episodes[future_idx][-1]
+                future_ag = self.episodes[idx][future_idx][-1]
                 
-                new_r = self.compute_reward(ag, future_ag)
-                self.buffer.append((s, a, ns, new_r, d, future_ag, ag))
+                new_r = self.compute_reward(future_ag, ag)
+                self.buffer.append((s, a, ns, new_r, False, future_ag, ag))
