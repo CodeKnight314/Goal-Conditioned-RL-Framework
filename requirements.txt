@@ -6,3 +6,5 @@ opencv-python
 panda-gym
 PyYAML
 matplotlib
+wandb
+pydantic
