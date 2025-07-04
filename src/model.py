@@ -19,6 +19,7 @@ class Actor(nn.Module):
         self.net.append(nn.Tanh())
         
         self.net = nn.Sequential(*self.net)
+        self.apply(self._init_weights)
         
     def forward(self, x: torch.Tensor):
         return self.net(x)
@@ -29,6 +30,14 @@ class Actor(nn.Module):
     def save(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(self.state_dict(), path)
+        
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.xavier_uniform_(module.weight)
+            module.bias.data.fill_(0.01)
+        
+    def reset(self): 
+        self.apply(self._init_weights)
         
 class Critic(nn.Module):
     def __init__(self, input_dim: int, hidden_dim: int, layer_stack: int = 4):
@@ -46,6 +55,7 @@ class Critic(nn.Module):
         self.net.append(nn.Linear(hidden_dim, 1))
         
         self.net = nn.Sequential(*self.net)
+        self.apply(self._init_weights)
         
     def forward(self, x: torch.Tensor):
         return self.net(x)
@@ -56,3 +66,11 @@ class Critic(nn.Module):
     def save(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         torch.save(self.state_dict(), path)
+        
+    def _init_weights(self, module):
+        if isinstance(module, nn.Linear):
+            torch.nn.init.xavier_uniform_(module.weight)
+            module.bias.data.fill_(0.01)
+        
+    def reset(self): 
+        self.apply(self._init_weights)
