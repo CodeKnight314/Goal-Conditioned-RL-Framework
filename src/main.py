@@ -1,16 +1,28 @@
 import argparse
-from src.env import PandasEnv
+from src.env import PandasEnv, PandasHEREnv
 
 MAPPING = {
-    "reach": "PandaReachJointsDense-v3",
-    "push": "PandaPushJointsDense-v3",
-    "slide": "PandaSlideJointsDense-v3",
-    "pickplace": "PandaPickAndPlaceJointsDense-v3",
-    "stack": "PandaStackJointsDense-v3",
+    "reach": "PandaReachDense-v3",
+    "push": "PandaPushDense-v3",
+    "slide": "PandaSlideDense-v3",
+    "pickplace": "PandaPickAndPlaceDense-v3",
+    "stack": "PandaStackDense-v3",
+}
+
+HER_MAPPING = {
+    "reach": "PandaReach-v3",
+    "push": "PandaPush-v3",
+    "slide": "PandaSlide-v3",
+    "pickplace": "PandaPickAndPlace-v3",
+    "stack": "PandaStack-v3",
 }
 
 def main(args):
-    env = PandasEnv(MAPPING[args.id], args.c, args.nenv, args.w, args.verbose)
+    if args.her: 
+        env = PandasHEREnv(HER_MAPPING[args.id], args.seed, args.c, args.nenv, args.w, args.verbose, not args.no_wandb)
+    else:
+        env = PandasEnv(MAPPING[args.id], args.seed, args.c, args.nenv, args.w, args.verbose, not args.no_wandb)
+        
     if args.mode == "train":
         env.train(args.o)
     elif args.mode == "test":
@@ -28,6 +40,9 @@ if __name__ == "__main__":
     parser.add_argument("--nenv", type=int, default=32, help="Number of parallel environments to run concurrently")
     parser.add_argument("--neps", type=int, default=10, help="Number of episodes to run for testing")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging and rendering")
+    parser.add_argument("--her", action="store_true", help="Initialize HER based environment")
+    parser.add_argument("--seed", type=int, default=1898, help="Seed for reproducibility")
+    parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging")
     args = parser.parse_args()
 
     main(args)
