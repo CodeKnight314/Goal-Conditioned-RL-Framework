@@ -111,8 +111,7 @@ class PandaAgent():
         
     def actor_update(self, states: torch.Tensor):
         actions = self.actor(states)
-        smoothing_loss = (actions ** 2).mean()
-        actor_loss = -self.critic_1(torch.cat([states, actions], dim=-1)).mean() + self.ac_smoothing_coeff * smoothing_loss
+        actor_loss = -self.critic_1(torch.cat([states, actions], dim=-1)).mean()
         
         self.actor_opt.zero_grad()
         actor_loss.backward()
@@ -134,6 +133,10 @@ class PandaAgent():
             target_Q_value = torch.min(target_Q1_value, target_Q2_value)
             
             target = reward + self.gamma * (1 - done) * target_Q_value
+            
+            min_q_value = -1.0/(1.0-self.gamma)
+            max_q_value = 0
+            target = torch.clamp(target, min=min_q_value, max=max_q_value)
             
         current_critic_input = torch.concat([state, action], dim=-1)
         current_q1_value = self.critic_1(current_critic_input)
