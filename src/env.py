@@ -5,13 +5,13 @@ from src.buffer import HERBuffer
 import os
 import logging
 from tqdm import tqdm
-import panda_gym
 import numpy as np
 from collections import deque
 import matplotlib.pyplot as plt
 import cv2
 import wandb
-from src.utils import load_config, set_seed
+from src.utils import load_config, set_seed, normalize, load_her_config
+import panda_gym
 
 logging.basicConfig(
     level=logging.INFO,
@@ -87,15 +87,15 @@ class PandasEnv():
         
         logger.info("Initializing GameAgent with configuration:")
         logger.info(f"- Environment: {env_id}")
-        logger.info(f"- Action Space: {self.env.action_space[0].n}")
+        logger.info(f"- Action Space: {ac_dim}")
         logger.info(f"- Update:Sample ratio: {(1/((self.num_envs)/self.gradient_step)):.4f}: {1}")
         logger.info(f"- Total Expected Gradient Steps: {round(self.config.max_frames/(self.num_envs)) * self.gradient_step}")
         logger.info(f"- Total Expected Samples Read: {round(self.config.max_frames/(self.num_envs)) * self.gradient_step * self.config.agent.batch_size}")
         logger.info(f"Environment initialized with seed: {seed}")
         
     def _process_step(self, state, actions, next_obs_raw, rewards, dones):
-        obs_np = np.concatenate([state["observation"], state["desired_goal"]], axis=-1)
-        next_np = np.concatenate([next_obs_raw["observation"], next_obs_raw["desired_goal"]], axis=-1)
+        obs_np = np.concatenate([normalize(state["observation"]), state["desired_goal"]], axis=-1)
+        next_np = np.concatenate([normalize(next_obs_raw["observation"]), next_obs_raw["desired_goal"]], axis=-1)
         
         obs_batch = torch.from_numpy(obs_np).float().to(self.device)
         next_obs_batch = torch.from_numpy(next_np).float().to(self.device)
@@ -135,7 +135,7 @@ class PandasEnv():
         pbar = tqdm(total=self.config.max_frames, desc="Frames")
         
         while total_frames < self.config.max_frames:
-            state_input = np.concatenate([state["observation"], state["desired_goal"]], axis=-1)
+            state_input = np.concatenate([normalize(state["observation"]), state["desired_goal"]], axis=-1)
             actions = self.agent.select_action(state_input)
             actions = np.array(actions, dtype=np.float32)
                 
@@ -161,10 +161,14 @@ class PandasEnv():
                         logger.info(f"Checkpoint saved at frame {total_frames}")
                 
                 if total_frames % self.video_freq == 0: 
-                    self.test(os.path.join(path, f"checkpoint"), 10, False)
+                    self.test(os.path.join(path, "checkpoint"), 10, False)
+                    if self.verbose:
+                        logger.info(f"Video saved at {os.path.join(path, 'checkpoint')}")
                     
                 if total_frames % self.reset_freq == 0: 
                     self.agent.reset()
+                    if self.verbose: 
+                        logger.info(f"Agent reset at frame {total_frames}")
                         
             if self.agent.is_buffer_filled(): 
                 for i in range(self.gradient_step):
@@ -178,6 +182,7 @@ class PandasEnv():
                     self.history["q2_loss"].append(q2_loss)
                     self.grad_counter+=1
                         
+            success_rate = np.mean(rewards == 0)
             pbar.update(self.num_envs)
             
             if len(self.history["reward"]) >= self.config.window_size:
@@ -204,12 +209,14 @@ class PandasEnv():
                     "q2_loss": self.history["q2_loss_history"][-1],
                     "actor_loss": self.history["ac_loss_history"][-1],
                     "frames": total_frames,
-                    "best_reward": self.best_reward
+                    "best_reward": self.best_reward,
+                    "success_rate": success_rate
                 }, step=total_frames)
             
             pbar.set_postfix(
                 reward=f"{self.history['reward_history'][-1]:.4f}", 
-                loss=f"{self.history['ac_loss_history'][-1]:.4f}", 
+                ac_loss=f"{self.history['ac_loss_history'][-1]:.4f}", 
+                success_rate=f"{success_rate}"
             )
         
         pbar.close()
@@ -249,7 +256,7 @@ class PandasEnv():
                 frame = env.render()
 
                 action = self.agent.select_action(
-                    np.concatenate([state["observation"], state["desired_goal"]], axis=-1), 
+                    np.concatenate([normalize(state["observation"]), state["desired_goal"]], axis=-1), 
                     eval_action=True
                 )
 
@@ -334,8 +341,24 @@ class PandasEnv():
             
 class PandasHEREnv(PandasEnv):
     def __init__(self, env_id, seed, config, num_envs, weights = None, verbose = True, use_wandb = True):
+        her_config = load_her_config(config)
+        
         super().__init__(env_id, seed, config, num_envs, weights, verbose, use_wandb)
+        
+        self.config = her_config
+        self.agent_config = self.config.agent
+        self.max_episode = self.config.max_episode
+        self.max_cycle = self.config.max_cycle
+        self.max_epoch = self.config.max_epoch
+        
         assert isinstance(self.agent.buffer, HERBuffer), "[ERROR] Agent Buffer is not of HERBuffer type. Change in configs to HER"
+        
+        logger.info("Initializing HER GameAgent with configuration:")
+        logger.info(f"- Environment: {env_id}")
+        logger.info(f"- Action Space: {self.ac_dim}")
+        logger.info(f"- Total Expected Gradient Steps: {round(self.max_epoch * self.max_cycle * self.gradient_step)}")
+        logger.info(f"- Total Expected Episodes Read: {round(self.max_epoch * self.max_cycle * self.max_episode)}")
+        logger.info(f"Environment initialized with seed: {seed}")
     
     def _push_to_buffer(self, i, obs_batch, actions, rewards, next_obs_batch, dones, state):
         self.agent.push_her(
@@ -349,3 +372,93 @@ class PandasHEREnv(PandasEnv):
             state["achieved_goal"][i]
         )
      
+    def train(self, path: str): 
+        self.warmup()
+        logger.info(f"Starting training process. Model will be saved to: {path}")
+        os.makedirs(path, exist_ok=True)
+        
+        state, _ = self.env.reset()  
+        episode_rewards = np.zeros(self.num_envs, dtype=float)
+        total_frames = 0
+        
+        for epoch in tqdm(range(1, self.max_epoch+1), desc="Epoch", position=0):
+            for cycle in tqdm(range(1, self.max_cycle + 1), desc="Cycle", position=1, leave=False):
+                state, _ = self.env.reset() 
+                
+                episode_count = 0
+                while episode_count < self.max_episode:
+                    state_input = np.concatenate([normalize(state["observation"]), state["desired_goal"]], axis=-1)
+                    actions = self.agent.select_action(state_input)
+                    actions = np.array(actions, dtype=np.float32)
+                    
+                    next_obs_raw, rewards, terminateds, truncateds, _ = self.env.step(actions)
+                    dones = np.logical_or(terminateds, truncateds)
+                    
+                    self._process_step(state, actions, next_obs_raw, rewards, dones)
+                    
+                    for i in range(self.num_envs):
+                        episode_rewards[i] += rewards[i]
+                        total_frames += 1
+                        
+                        self.agent.noise_scheduler(total_frames)
+                        
+                        if dones[i]:
+                            self.history["reward"].append(episode_rewards[i])
+                            episode_rewards[i] = 0.0
+                            episode_count += 1
+                                                            
+                    state = next_obs_raw
+                
+                for i in range(self.gradient_step):
+                    info = self.agent.update(step=self.grad_counter)
+                    if len(info) == 3: 
+                        q1_loss, q2_loss, ac_loss = info
+                        self.history["ac_loss"].append(ac_loss)
+                    else: 
+                        q1_loss, q2_loss = info
+                    self.history["q1_loss"].append(q1_loss)
+                    self.history["q2_loss"].append(q2_loss)
+                    self.grad_counter+=1     
+                    
+                self.history["reward_history"].append(np.mean(self.history['reward']) if len(self.history["reward"]) > 0 else 0.0)
+                self.history["ac_loss_history"].append(np.mean(self.history['ac_loss']) if len(self.history["ac_loss"]) > 0 else 0.0)
+                self.history["q1_loss_history"].append(np.mean(self.history["q1_loss"]) if len(self.history["q1_loss"]) > 0 else 0.0)
+                self.history["q2_loss_history"].append(np.mean(self.history["q2_loss"]) if len(self.history["q2_loss"]) > 0 else 0.0)
+                
+                if len(self.history["reward"]) >= self.config.window_size:
+                    recent_reward_avg = np.mean(self.history["reward"])
+                    if recent_reward_avg > self.best_reward:
+                        self.best_reward = recent_reward_avg
+                        self.agent.save_weights(os.path.join(path, "best_weights"))
+                        self.test(os.path.join(path, "video"), num_episodes=1)
+                        if self.verbose:
+                            logger.info(f"New best model saved! Average reward: {recent_reward_avg:.2f}")
+                
+                if self.use_wandb:
+                    wandb.log({
+                        "reward": self.history["reward_history"][-1],
+                        "q1_loss": self.history["q1_loss_history"][-1],
+                        "q2_loss": self.history["q2_loss_history"][-1],
+                        "actor_loss": self.history["ac_loss_history"][-1],
+                        "best_reward": self.best_reward,
+                        "epoch": epoch,
+                        "cycle": cycle
+                    }, step=epoch * self.max_cycle + cycle)      
+            
+            if epoch % self.save_freq == 0:
+                self.agent.save_weights(os.path.join(path, "checkpoint"))
+                self.plot_history(os.path.join(path, "checkpoint"))
+                if self.verbose:
+                    logger.info(f"Checkpoint saved at epoch {epoch}") 
+            
+            if epoch % self.video_freq == 0: 
+                self.test(os.path.join(path, "checkpoint"), 10, False)
+                if self.verbose:
+                    logger.info(f"Video saved at {os.path.join(path, 'checkpoint')}")
+        
+        logger.info("Training completed. Saving final model weights...")
+        self.agent.save_weights(os.path.join(path, "final"))
+        self.plot_history(os.path.join(path, "final"))
+        logger.info(f"Final model weights saved to: {os.path.join(path, 'final')}")
+        
+        return np.mean(self.history['reward'])       
