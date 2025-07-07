@@ -4,6 +4,7 @@ import torch
 import gymnasium as gym
 import yaml
 from pydantic import BaseModel, Field
+from typing import Tuple
 
 class AgentConfig(BaseModel):
     hidden_dim: int = Field(..., ge=1)
@@ -42,11 +43,26 @@ class Config(BaseModel):
     gradient_step: int = Field(..., ge=1)
     reset_freq: int = Field(..., ge=1)
     agent: AgentConfig
+    
+class HERConfig(BaseModel):
+    max_episode: int = Field(..., ge=1)
+    max_cycle: int = Field(..., ge=1)
+    max_epoch: int = Field(..., ge=1)
+    save_freq: int = Field(..., ge=1)
+    video_freq: int = Field(..., ge=1)
+    window_size: int = Field(..., ge=1)
+    gradient_step: int = Field(..., ge=1)
+    agent: AgentConfig
 
 def load_config(path: str) -> Config:
     with open(path, 'r') as f:
         cfg = yaml.safe_load(f)
     return Config(**cfg)
+
+def load_her_config(path: str) -> HERConfig:
+    with open(path, 'r') as f: 
+        cfg = yaml.safe_load(f)
+    return HERConfig(**cfg)
 
 def set_seed(seed: int, env: gym.vector.AsyncVectorEnv = None):
     random.seed(seed)
@@ -60,3 +76,17 @@ def set_seed(seed: int, env: gym.vector.AsyncVectorEnv = None):
     if env is not None:
         env.action_space.seed(seed)
         env.observation_space.seed(seed)
+        
+def normalize(x: np.array, clip_range: Tuple[int, int] = (-5, 5)):
+    if x.ndim == 1: 
+        mean = np.mean(x)
+        std = np.std(x)
+    elif x.ndim == 2: 
+        mean = np.mean(x, axis=1, keepdims=True)
+        std = np.std(x, axis=1, keepdims=True)
+    else: 
+        raise ValueError(f"[ERROR] Numpy array of {x.ndim} is not valid")
+    
+    normalized_x = (x-mean)/std
+    clipped_x = np.clip(normalized_x, clip_range[0], clip_range[1])
+    return clipped_x
