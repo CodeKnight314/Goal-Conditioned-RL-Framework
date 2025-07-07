@@ -6,7 +6,6 @@ MAPPING = {
     "push": "PandaPushDense-v3",
     "slide": "PandaSlideDense-v3",
     "pickplace": "PandaPickAndPlaceDense-v3",
-    "stack": "PandaStackDense-v3",
 }
 
 HER_MAPPING = {
@@ -14,7 +13,6 @@ HER_MAPPING = {
     "push": "PandaPush-v3",
     "slide": "PandaSlide-v3",
     "pickplace": "PandaPickAndPlace-v3",
-    "stack": "PandaStack-v3",
 }
 
 def main(args):
