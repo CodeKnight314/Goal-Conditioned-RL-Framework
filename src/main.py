@@ -2,17 +2,17 @@ import argparse
 from src.env import PandasEnv, PandasHEREnv
 
 MAPPING = {
-    "reach": "PandaReachDense-v3",
-    "push": "PandaPushDense-v3",
-    "slide": "PandaSlideDense-v3",
-    "pickplace": "PandaPickAndPlaceDense-v3",
+    "reach": "FetchReachDense-v3",
+    "push": "FetchPushDense-v3",
+    "slide": "FetchSlideDense-v3",
+    "pickplace": "FetchPickAndPlaceDense-v3",
 }
 
 HER_MAPPING = {
-    "reach": "PandaReach-v3",
-    "push": "PandaPush-v3",
-    "slide": "PandaSlide-v3",
-    "pickplace": "PandaPickAndPlace-v3",
+    "reach": "FetchReach-v3",
+    "push": "FetchPush-v3",
+    "slide": "FetchSlide-v3",
+    "pickplace": "FetchPickAndPlace-v3",
 }
 
 def main(args):
