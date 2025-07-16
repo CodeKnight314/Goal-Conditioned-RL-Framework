@@ -3,26 +3,26 @@ import torch.nn as nn
 import os
 
 class Actor(nn.Module):
-    def __init__(self, obs_dim: int, hidden_dim: int, ac_dim: int, layer_stack: int = 4):
+    def __init__(self, obs_dim: int, hidden_dim: int, ac_dim: int, layer_stack: int = 3):
         super().__init__()
-        
-        self.net = [
-            nn.Linear(obs_dim, hidden_dim), 
-            nn.ReLU()
-        ]
+        layers = []
+        current_dim = obs_dim
         
         for i in range(layer_stack):
-            self.net.append(nn.Linear(hidden_dim, hidden_dim))
-            self.net.append(nn.ReLU())
-        
-        self.net.append(nn.Linear(hidden_dim, ac_dim))
-        self.net.append(nn.Tanh())
-        
-        self.net = nn.Sequential(*self.net)
+            layers.extend([
+                nn.Linear(current_dim, hidden_dim),
+                nn.BatchNorm1d(hidden_dim),
+                nn.ReLU() if i != layer_stack else nn.Tanh()
+            ])
+            current_dim = hidden_dim
+        self.base_net = nn.Sequential(*layers)
+        self.output_layer = nn.Linear(hidden_dim, ac_dim)
         self.apply(self._init_weights)
         
     def forward(self, x: torch.Tensor):
-        return self.net(x)
+        x = self.base_net(x)
+        preactivation = self.output_layer(x)
+        return preactivation
 
     def load(self, weights: str, device: str="cuda"):
         self.load_state_dict(torch.load(weights, map_location=torch.device(device)))
@@ -40,21 +40,21 @@ class Actor(nn.Module):
         self.apply(self._init_weights)
         
 class Critic(nn.Module):
-    def __init__(self, input_dim: int, hidden_dim: int, layer_stack: int = 4):
+    def __init__(self, input_dim: int, hidden_dim: int, layer_stack: int = 3):
         super().__init__()
+        layers = []
+        current_dim = input_dim
         
-        self.net = [
-            nn.Linear(input_dim, hidden_dim), 
-            nn.ReLU()
-        ]
-        
-        for i in range(layer_stack):
-            self.net.append(nn.Linear(hidden_dim, hidden_dim))
-            self.net.append(nn.ReLU())
-        
-        self.net.append(nn.Linear(hidden_dim, 1))
-        
-        self.net = nn.Sequential(*self.net)
+        for i in range(layer_stack-1):
+            layers.extend([
+                nn.Linear(current_dim, hidden_dim),
+                nn.BatchNorm1d(hidden_dim),
+                nn.ReLU()
+            ])
+            current_dim = hidden_dim
+            
+        layers.append(nn.Linear(hidden_dim, 1))
+        self.net = nn.Sequential(*layers)
         self.apply(self._init_weights)
         
     def forward(self, x: torch.Tensor):
