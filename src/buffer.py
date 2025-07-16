@@ -2,6 +2,7 @@ import numpy as np
 from collections import deque
 import torch 
 import random
+from src.utils import RunningNormalizer
 
 class ReplayBuffer():
     def __init__(self, max_len: int):
@@ -41,7 +42,7 @@ class PERBuffer():
         self.priorities.append(1.0)
         
     def sample(self, batch_size: int, beta: float):
-        assert len(self.buffer) >= batch_size, "Not enough in buffer to sample"
+        assert len(self) >= batch_size, "Not enough in buffer to sample"
 
         N = len(self)
         P = np.array(self.priorities, dtype=np.float32)
@@ -179,6 +180,9 @@ class HERBuffer():
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.threshold = threshold
         self.k_future = k_future
+        self.compute_reward = None
+        self.obs_normalizer: RunningNormalizer = None
+        self.dg_normalizer: RunningNormalizer = None
         
     def push(self, idx, state, action, next_state, reward, done, desired_goal, achieved_goal):
         self.episodes[idx].append((state, action, next_state, reward, done, desired_goal, achieved_goal))
@@ -193,30 +197,37 @@ class HERBuffer():
         batches = random.sample(self.buffer, batch_size)
         states, actions, next_states, rewards, dones, _, _ = zip(*batches)
         
-        states = torch.stack([s.clone().detach() for s in states]).to(self.device)
-        actions = torch.tensor(np.array(actions), dtype=torch.float32).to(self.device)
+        states = torch.from_numpy(np.array(states)).float().to(self.device)
+        actions = torch.from_numpy(np.array(actions)).float().to(self.device)
         rewards = torch.tensor(rewards, dtype=torch.float32).unsqueeze(-1).to(self.device)
-        next_states = torch.stack([s.clone().detach() for s in next_states]).to(self.device)
+        next_states = torch.from_numpy(np.array(next_states)).float().to(self.device)
         dones = torch.tensor(dones, dtype=torch.float32).unsqueeze(-1).to(self.device)
-       
+    
         return states, actions, rewards, next_states, dones
     
     def __len__(self):
         return len(self.buffer)
-
-    def compute_reward(self, desired_goals, achieved_goals):
-        dist = np.linalg.norm(achieved_goals - desired_goals)
-        return 0.0 if dist < self.threshold else -1.0
     
     def apply_her(self, idx: int):
         eps_len = len(self.episodes[idx])
         
         for i, (s, a, ns, r, d, dg, ag) in enumerate(self.episodes[idx]):
+            s = s.detach().cpu().numpy()
+            ns = ns.detach().cpu().numpy()
             self.buffer.append((s, a, ns, r, d, dg, ag))
             
             for _ in range(self.k_future):
-                future_idx = np.random.randint(i, eps_len)
-                future_ag = self.episodes[idx][future_idx][-1]
-                
-                new_r = self.compute_reward(future_ag, ag)
-                self.buffer.append((s, a, ns, new_r, False, future_ag, ag))
+                if i < eps_len - 1:
+                    future_idx = random.randint(i + 1, eps_len - 1)
+                    _, _, _, _, _, _, future_ag = self.episodes[idx][future_idx]
+                    
+                    new_desired_goal = np.array(future_ag, dtype=np.float32)
+                    goal_dim = new_desired_goal.shape[0]
+
+                    s_relabeled = np.concatenate([s[:-goal_dim], new_desired_goal], axis=-1)                    
+                    ns_relabeled = np.concatenate([ns[:-goal_dim], new_desired_goal], axis=-1)
+                    
+                    new_reward = self.compute_reward(ag, future_ag, {})
+                    new_done = False
+                    
+                    self.buffer.append((s_relabeled, a, ns_relabeled, new_reward, new_done, new_desired_goal, ag))
