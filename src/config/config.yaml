@@ -27,12 +27,7 @@ agent:
   ac_update_freq: 4
 
   noise_std: 0.1
-  noise_std_min: 0.01
-  noise_std_end: 10000
-
   noise_clamp: 0.5
-  noise_clamp_min: 0.1
-  noise_clamp_end: 10000
 
   policy_noise: 0.2
   smooth_coeff: 0.003
