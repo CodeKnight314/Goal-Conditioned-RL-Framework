@@ -1,9 +1,9 @@
 torch
-numpy
+numpy<2
 tqdm
 gymnasium
 opencv-python
-panda-gym
+gymnasium-robotics
 PyYAML
 matplotlib
 wandb
