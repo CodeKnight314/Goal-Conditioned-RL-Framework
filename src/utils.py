@@ -1,3 +1,4 @@
+import os
 import random
 import numpy as np
 import torch
@@ -22,11 +23,7 @@ class AgentConfig(BaseModel):
     gamma: float = Field(..., ge=0, le=1)
     ac_update_freq: int = Field(..., ge=1)
     noise_std: float = Field(..., ge=0)
-    noise_std_min: float = Field(..., ge=0)
-    noise_std_end: int = Field(..., ge=1)
     noise_clamp: float = Field(..., ge=0)
-    noise_clamp_min: float = Field(..., ge=0)
-    noise_clamp_end: int = Field(..., ge=1)
     policy_noise: float = Field(..., ge=0)
     smooth_coeff: float = Field(..., ge=0)
     grad_clip: float = Field(..., ge=0)
@@ -34,6 +31,7 @@ class AgentConfig(BaseModel):
     beta_end: int = Field(..., ge=1)
     k_future: int = Field(..., ge=0)
     max_eps_len: int = Field(..., ge=1)
+    tau: float = Field(..., ge=0)
 
 class Config(BaseModel):
     max_frames: int = Field(..., ge=1)
@@ -53,6 +51,57 @@ class HERConfig(BaseModel):
     window_size: int = Field(..., ge=1)
     gradient_step: int = Field(..., ge=1)
     agent: AgentConfig
+    
+class RunningNormalizer:
+    def __init__(self, size, clip_range=5.0, eps=1e-8):
+        self.mean = np.zeros(size)
+        self.var = np.ones(size)
+        self.count = eps
+        self.clip_range = clip_range
+
+    def update(self, x):
+        batch_mean = np.mean(x, axis=0)
+        batch_var = np.var(x, axis=0)
+        batch_count = x.shape[0]
+
+        self._update_from_moments(batch_mean, batch_var, batch_count)
+
+    def _update_from_moments(self, mean, var, count):
+        total_count = self.count + count
+        delta = mean - self.mean
+
+        new_mean = self.mean + delta * count / total_count
+        m_a = self.var * self.count
+        m_b = var * count
+        M2 = m_a + m_b + np.square(delta) * self.count * count / total_count
+        new_var = M2 / total_count
+
+        self.mean = new_mean
+        self.var = new_var
+        self.count = total_count
+
+    def normalize(self, x):
+        norm_x = (x - self.mean) / (np.sqrt(self.var) + 1e-8)
+        return np.clip(norm_x, -self.clip_range, self.clip_range)
+    
+    def save(self, path: str):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = {
+            'mean': self.mean.tolist(),
+            'var': self.var.tolist(),
+            'count': float(self.count),
+            'clip_range': float(self.clip_range)
+        }
+        with open(path, 'w') as f:
+            yaml.dump(data, f)
+
+    def load(self, path: str):
+        with open(path, 'r') as f:
+            data = yaml.safe_load(f)
+        self.mean = np.array(data['mean'], dtype=np.float32)
+        self.var = np.array(data['var'], dtype=np.float32)
+        self.count = float(data['count'])
+        self.clip_range = float(data['clip_range'])
 
 def load_config(path: str) -> Config:
     with open(path, 'r') as f:
@@ -76,17 +125,3 @@ def set_seed(seed: int, env: gym.vector.AsyncVectorEnv = None):
     if env is not None:
         env.action_space.seed(seed)
         env.observation_space.seed(seed)
-        
-def normalize(x: np.array, clip_range: Tuple[int, int] = (-5, 5)):
-    if x.ndim == 1: 
-        mean = np.mean(x)
-        std = np.std(x)
-    elif x.ndim == 2: 
-        mean = np.mean(x, axis=1, keepdims=True)
-        std = np.std(x, axis=1, keepdims=True)
-    else: 
-        raise ValueError(f"[ERROR] Numpy array of {x.ndim} is not valid")
-    
-    normalized_x = (x-mean)/std
-    clipped_x = np.clip(normalized_x, clip_range[0], clip_range[1])
-    return clipped_x
