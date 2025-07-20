@@ -16,6 +16,7 @@ class AgentConfig(BaseModel):
     critic_lr: float = Field(..., gt=0)
     critic_lr_min: float = Field(..., gt=0)
     cr_scheduler_steps: int = Field(..., ge=1)
+    alpha_lr: float = Field(default=0.0003, gt=0)  # SAC temperature learning rate
     buffer_type: str
     max_len: int = Field(..., ge=1)
     alpha: float = Field(..., ge=0)
@@ -25,7 +26,6 @@ class AgentConfig(BaseModel):
     noise_std: float = Field(..., ge=0)
     noise_clamp: float = Field(..., ge=0)
     policy_noise: float = Field(..., ge=0)
-    smooth_coeff: float = Field(..., ge=0)
     grad_clip: float = Field(..., ge=0)
     beta: float = Field(..., ge=0)
     beta_end: int = Field(..., ge=1)
@@ -102,7 +102,23 @@ class RunningNormalizer:
         self.var = np.array(data['var'], dtype=np.float32)
         self.count = float(data['count'])
         self.clip_range = float(data['clip_range'])
-
+        
+class TerminateOnAchieve(gym.Wrapper):
+    def __init__(self, env, threshold: float = 0.05):
+        super().__init__(env)
+        self.threshold = threshold 
+        
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)    
+        terminated = self._compute_custom_termination(obs)
+        return obs, reward, terminated, truncated, info
+    
+    def _compute_custom_termination(self, state):
+        achieved_goals = state["achieved_goal"]
+        desired_goals = state["desired_goal"]
+        distances = np.linalg.norm(achieved_goals - desired_goals, axis=-1)
+        return distances < self.threshold
+    
 def load_config(path: str) -> Config:
     with open(path, 'r') as f:
         cfg = yaml.safe_load(f)

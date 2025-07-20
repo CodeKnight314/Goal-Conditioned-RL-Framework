@@ -2,24 +2,24 @@ import argparse
 from src.env import PandasEnv, PandasHEREnv
 
 MAPPING = {
-    "reach": "FetchReachDense-v3",
-    "push": "FetchPushDense-v3",
-    "slide": "FetchSlideDense-v3",
-    "pickplace": "FetchPickAndPlaceDense-v3",
+    "reach": "FetchReachDense-v4",
+    "push": "FetchPushDense-v4",
+    "slide": "FetchSlideDense-v4",
+    "pickplace": "FetchPickAndPlaceDense-v4",
 }
 
 HER_MAPPING = {
-    "reach": "FetchReach-v3",
-    "push": "FetchPush-v3",
-    "slide": "FetchSlide-v3",
-    "pickplace": "FetchPickAndPlace-v3",
+    "reach": "FetchReach-v4",
+    "push": "FetchPush-v4",
+    "slide": "FetchSlide-v4",
+    "pickplace": "FetchPickAndPlace-v4",
 }
 
 def main(args):
     if args.her: 
-        env = PandasHEREnv(HER_MAPPING[args.id], args.seed, args.c, args.nenv, args.w, args.verbose, not args.no_wandb)
+        env = PandasHEREnv(HER_MAPPING[args.id], args.seed, args.c, args.nenv, args.w, args.verbose, not args.no_wandb, args.agent)
     else:
-        env = PandasEnv(MAPPING[args.id], args.seed, args.c, args.nenv, args.w, args.verbose, not args.no_wandb)
+        env = PandasEnv(MAPPING[args.id], args.seed, args.c, args.nenv, args.w, args.verbose, not args.no_wandb, args.agent)
         
     if args.mode == "train":
         env.train(args.o)
@@ -39,6 +39,7 @@ if __name__ == "__main__":
     parser.add_argument("--neps", type=int, default=10, help="Number of episodes to run for testing")
     parser.add_argument("--verbose", action="store_true", help="Enable verbose logging and rendering")
     parser.add_argument("--her", action="store_true", help="Initialize HER based environment")
+    parser.add_argument("--agent", type=str, default="TD3", choices=["TD3", "SAC"], help="Agent type to use (TD3 or SAC)")
     parser.add_argument("--seed", type=int, default=1898, help="Seed for reproducibility")
     parser.add_argument("--no-wandb", action="store_true", help="Disable wandb logging")
     args = parser.parse_args()

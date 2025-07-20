@@ -20,9 +20,9 @@ class ReplayBuffer():
         
         states = torch.stack([s.clone().detach() for s in states]).to(self.device)
         actions = torch.tensor(actions, dtype=torch.float32).to(self.device)
-        rewards = torch.tensor(rewards, dtype=torch.float32).to(self.device)
+        rewards = torch.tensor(rewards, dtype=torch.float32).unsqueeze(-1).to(self.device)
         next_states = torch.stack([s.clone().detach() for s in next_states]).to(self.device)
-        dones = torch.tensor(dones, dtype=torch.float32).to(self.device)
+        dones = torch.tensor(dones, dtype=torch.float32).unsqueeze(-1).to(self.device)
         
         return states, actions, rewards, next_states, dones
     
@@ -187,7 +187,7 @@ class HERBuffer():
     def push(self, idx, state, action, next_state, reward, done, desired_goal, achieved_goal):
         self.episodes[idx].append((state, action, next_state, reward, done, desired_goal, achieved_goal))
         
-        if done: 
+        if done or len(self.episodes[idx]) >= 50: 
             self.apply_her(idx)
             self.episodes[idx].clear()
         
@@ -208,6 +208,9 @@ class HERBuffer():
     def __len__(self):
         return len(self.buffer)
     
+    def compute_termination(self, dg: np.array, ag: np.array):
+        return np.linalg.norm(dg - ag, axis=-1) < self.threshold
+    
     def apply_her(self, idx: int):
         eps_len = len(self.episodes[idx])
         
@@ -224,7 +227,7 @@ class HERBuffer():
                     new_desired_goal = np.array(future_ag, dtype=np.float32)
                     goal_dim = new_desired_goal.shape[0]
 
-                    s_relabeled = np.concatenate([s[:-goal_dim], new_desired_goal], axis=-1)                    
+                    s_relabeled = np.concatenate([s[:-goal_dim], new_desired_goal], axis=-1)           
                     ns_relabeled = np.concatenate([ns[:-goal_dim], new_desired_goal], axis=-1)
                     
                     new_reward = self.compute_reward(ag, future_ag, {})

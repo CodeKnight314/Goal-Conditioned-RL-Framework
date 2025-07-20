@@ -8,3 +8,4 @@ PyYAML
 matplotlib
 wandb
 pydantic
+optuna
