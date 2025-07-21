@@ -1,6 +1,6 @@
-max_episode: 32
+max_episode: 16
 max_cycle: 50 
-max_epoch: 30
+max_epoch: 200
 
 max_frames: 5000000
 save_freq: 1
@@ -8,7 +8,7 @@ video_freq: 10
 window_size: 100
 
 gradient_step: 40
-reset_freq: 25
+reset_freq: 1000000000
 
 agent:
   hidden_dim: 256
@@ -28,8 +28,8 @@ agent:
   max_len: 1000000
   alpha: 0.6
 
-  batch_size: 256
-  gamma: 0.99
+  batch_size: 512
+  gamma: 0.98
   ac_update_freq: 1
 
   noise_std: 0.0
