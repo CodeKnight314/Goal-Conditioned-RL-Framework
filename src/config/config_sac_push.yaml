@@ -12,31 +12,31 @@ reset_freq: 1000000000
 
 agent:
   hidden_dim: 256  # Keep same as reach - larger obs space handled by more training
-  layer_count: 3
+  layer_count: 2
 
-  actor_lr: 0.0003 # Keep same as reach
-  actor_lr_min: 0.0003
+  actor_lr: 0.00005 # Keep same as reach
+  actor_lr_min: 0.00005
   ac_scheduler_steps: 50000
 
-  critic_lr: 0.0003  # Keep same as reach
-  critic_lr_min: 0.0003
+  critic_lr: 0.00005  # Keep same as reach
+  critic_lr_min: 0.00005
   cr_scheduler_steps: 50000
 
   alpha_lr: 0.0003
 
   buffer_type: "HER"
-  max_len: 100000
+  max_len: 1000000
   alpha: 0.6
 
   batch_size: 512  # Keep same as reach - stability is key
-  gamma: 0.95
+  gamma: 0.98
   ac_update_freq: 1
 
   noise_std: 0.0
   noise_clamp: 0.0
 
   policy_noise: 0.0
-  grad_clip: 2.0
+  grad_clip: 10.0
   tau: 0.005
 
   beta: 0.4

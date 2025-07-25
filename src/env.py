@@ -149,7 +149,7 @@ class PandasEnv():
             dones[i]
         )
         
-    def warmup(self, warmup_steps: int = 10000):
+    def warmup(self, warmup_steps: int = 200000):
         logger.info(f"Starting warmup process. Total samples: {warmup_steps}")
         
         state, _ = self.env.reset()

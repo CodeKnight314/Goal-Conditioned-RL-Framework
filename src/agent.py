@@ -129,13 +129,8 @@ class TD3Agent():
             target_Q1_value = self.target_critic_1(target_critic_input)
             target_Q2_value = self.target_critic_2(target_critic_input)
             target_Q_value = torch.min(target_Q1_value, target_Q2_value)
-            target_Q_value = torch.clamp(target_Q_value, min=-50.0, max=0.0)
             
             target = reward + self.gamma * (1 - done) * target_Q_value
-            
-            min_q_value = -1.0/(1.0-self.gamma)
-            max_q_value = 0
-            target = torch.clamp(target, min=min_q_value, max=max_q_value)
             
         current_critic_input = torch.concat([state, action], dim=-1)
         current_q1_value = self.critic_1(current_critic_input)
@@ -394,8 +389,6 @@ class SACAgent():
             target_q = torch.min(target_q1, target_q2)
             
             target_q = target_q - self.alpha * next_log_probs
-            target_q = torch.clamp(target_q, min=-50.0, max=0.0)
-            
             target = reward + self.gamma * (1 - done) * target_q
             
         current_critic_input = torch.cat([state, action], dim=-1)
