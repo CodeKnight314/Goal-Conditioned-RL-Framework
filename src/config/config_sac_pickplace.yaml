@@ -1,6 +1,6 @@
 max_episode: 16
-max_cycle: 50 
-max_epoch: 300  # Increased for most complex task
+max_cycle: 100
+max_epoch: 250  # Increased for most complex task
 
 max_frames: 12000000  # Increased for most complex task
 save_freq: 1

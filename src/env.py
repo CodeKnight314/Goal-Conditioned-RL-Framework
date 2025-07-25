@@ -158,8 +158,8 @@ class PandasEnv():
             for _ in range(iterations):
                 actions = self.env.action_space.sample()
                 next_obs_raw, rewards, terminateds, truncateds, _ = self.env.step(actions)
-                
-                self._process_step(state, actions, next_obs_raw, rewards, terminateds)
+                dones = np.logical_or(terminateds, truncateds)
+                self._process_step(state, actions, next_obs_raw, rewards, dones)
                 state = next_obs_raw
                 pbar.update(self.num_envs)
         
@@ -456,12 +456,9 @@ class PandasHEREnv(PandasEnv):
             for cycle in tqdm(range(1, self.max_cycle + 1), desc="Cycle", position=1, leave=False):                
                 episode_count = 0
                 while episode_count < self.max_episode:
-                    if random.random() < 0.3:
-                        actions = self.env.action_space.sample()
-                    else:
-                        state_input = self.agent.normalize_state_batch(state["observation"], state["desired_goal"])
-                        actions = self.agent.select_action(state_input)
-                        actions = np.array(actions, dtype=np.float32)
+                    state_input = self.agent.normalize_state_batch(state["observation"], state["desired_goal"])
+                    actions = self.agent.select_action(state_input)
+                    actions = np.array(actions, dtype=np.float32)
                     
                     next_obs_raw, rewards, terminateds, truncateds, _ = self.env.step(actions)                                                        
                     dones = np.logical_or(terminateds, truncateds)                                                                                    

@@ -1,5 +1,5 @@
 max_episode: 16
-max_cycle: 50 
+max_cycle: 100
 max_epoch: 250  # Increased epochs for more complex sliding task
 
 max_frames: 10000000  # Increased for more complex task
@@ -15,21 +15,21 @@ agent:
   layer_count: 3
 
   actor_lr: 0.0003  # Keep same as reach
-  actor_lr_min: 0.0001
+  actor_lr_min: 0.0003
   ac_scheduler_steps: 50000
 
   critic_lr: 0.0003  # Keep same as reach  
-  critic_lr_min: 0.0001
+  critic_lr_min: 0.0003
   cr_scheduler_steps: 50000
 
   alpha_lr: 0.0003
 
   buffer_type: "HER"
-  max_len: 1000000
+  max_len: 100000
   alpha: 0.6
 
   batch_size: 512  # Keep same as reach - stability is key
-  gamma: 0.98
+  gamma: 0.95
   ac_update_freq: 1
 
   noise_std: 0.0
@@ -42,5 +42,5 @@ agent:
   beta: 0.4
   beta_end: 10000
 
-  k_future: 4
+  k_future: 8
   max_eps_len: 50 
