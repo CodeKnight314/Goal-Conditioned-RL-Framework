@@ -158,8 +158,7 @@ class PandasEnv():
             for _ in range(iterations):
                 actions = self.env.action_space.sample()
                 next_obs_raw, rewards, terminateds, truncateds, _ = self.env.step(actions)
-                dones = np.logical_or(terminateds, truncateds)
-                self._process_step(state, actions, next_obs_raw, rewards, dones)
+                self._process_step(state, actions, next_obs_raw, rewards, terminateds)
                 state = next_obs_raw
                 pbar.update(self.num_envs)
         
