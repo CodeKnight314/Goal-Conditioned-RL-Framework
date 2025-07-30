@@ -5,7 +5,7 @@ import torch
 import gymnasium as gym
 import yaml
 from pydantic import BaseModel, Field
-from typing import Tuple
+
 
 class AgentConfig(BaseModel):
     hidden_dim: int = Field(..., ge=1)
@@ -33,6 +33,7 @@ class AgentConfig(BaseModel):
     max_eps_len: int = Field(..., ge=1)
     tau: float = Field(..., ge=0)
 
+
 class Config(BaseModel):
     max_frames: int = Field(..., ge=1)
     save_freq: int = Field(..., ge=1)
@@ -41,7 +42,8 @@ class Config(BaseModel):
     gradient_step: int = Field(..., ge=1)
     reset_freq: int = Field(..., ge=1)
     agent: AgentConfig
-    
+
+
 class HERConfig(BaseModel):
     max_episode: int = Field(..., ge=1)
     max_cycle: int = Field(..., ge=1)
@@ -51,7 +53,8 @@ class HERConfig(BaseModel):
     window_size: int = Field(..., ge=1)
     gradient_step: int = Field(..., ge=1)
     agent: AgentConfig
-    
+
+
 class RunningNormalizer:
     def __init__(self, size, clip_range=5.0, eps=1e-8):
         self.mean = np.zeros(size)
@@ -83,51 +86,55 @@ class RunningNormalizer:
     def normalize(self, x):
         norm_x = (x - self.mean) / (np.sqrt(self.var) + 1e-8)
         return np.clip(norm_x, -self.clip_range, self.clip_range)
-    
+
     def save(self, path: str):
         os.makedirs(os.path.dirname(path), exist_ok=True)
         data = {
-            'mean': self.mean.tolist(),
-            'var': self.var.tolist(),
-            'count': float(self.count),
-            'clip_range': float(self.clip_range)
+            "mean": self.mean.tolist(),
+            "var": self.var.tolist(),
+            "count": float(self.count),
+            "clip_range": float(self.clip_range),
         }
-        with open(path, 'w') as f:
+        with open(path, "w") as f:
             yaml.dump(data, f)
 
     def load(self, path: str):
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             data = yaml.safe_load(f)
-        self.mean = np.array(data['mean'], dtype=np.float32)
-        self.var = np.array(data['var'], dtype=np.float32)
-        self.count = float(data['count'])
-        self.clip_range = float(data['clip_range'])
-        
+        self.mean = np.array(data["mean"], dtype=np.float32)
+        self.var = np.array(data["var"], dtype=np.float32)
+        self.count = float(data["count"])
+        self.clip_range = float(data["clip_range"])
+
+
 class TerminateOnAchieve(gym.Wrapper):
     def __init__(self, env, threshold: float = 0.05):
         super().__init__(env)
-        self.threshold = threshold 
-        
+        self.threshold = threshold
+
     def step(self, action):
-        obs, reward, terminated, truncated, info = self.env.step(action)    
+        obs, reward, terminated, truncated, info = self.env.step(action)
         terminated = self._compute_custom_termination(obs)
         return obs, reward, terminated, truncated, info
-    
+
     def _compute_custom_termination(self, state):
         achieved_goals = state["achieved_goal"]
         desired_goals = state["desired_goal"]
         distances = np.linalg.norm(achieved_goals - desired_goals, axis=-1)
         return distances < self.threshold
-    
+
+
 def load_config(path: str) -> Config:
-    with open(path, 'r') as f:
+    with open(path, "r") as f:
         cfg = yaml.safe_load(f)
     return Config(**cfg)
 
+
 def load_her_config(path: str) -> HERConfig:
-    with open(path, 'r') as f: 
+    with open(path, "r") as f:
         cfg = yaml.safe_load(f)
     return HERConfig(**cfg)
+
 
 def set_seed(seed: int, env: gym.vector.AsyncVectorEnv = None):
     random.seed(seed)
