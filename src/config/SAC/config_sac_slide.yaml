@@ -1,8 +1,8 @@
 max_episode: 16
 max_cycle: 100
-max_epoch: 250  # Increased epochs for more complex sliding task
+max_epoch: 250 # Increased epochs for more complex sliding task
 
-max_frames: 10000000  # Increased for more complex task
+max_frames: 10000000 # Increased for more complex task
 save_freq: 1
 video_freq: 10
 window_size: 100
@@ -11,14 +11,14 @@ gradient_step: 40
 reset_freq: 1000000000
 
 agent:
-  hidden_dim: 256  # Keep same as reach - larger obs space handled by more training
+  hidden_dim: 256 # Keep same as reach - larger obs space handled by more training
   layer_count: 3
 
-  actor_lr: 0.0003  # Keep same as reach
+  actor_lr: 0.0003 # Keep same as reach
   actor_lr_min: 0.0003
   ac_scheduler_steps: 50000
 
-  critic_lr: 0.0003  # Keep same as reach  
+  critic_lr: 0.0003 # Keep same as reach
   critic_lr_min: 0.0003
   cr_scheduler_steps: 50000
 
@@ -28,7 +28,7 @@ agent:
   max_len: 100000
   alpha: 0.6
 
-  batch_size: 512  # Keep same as reach - stability is key
+  batch_size: 512 # Keep same as reach - stability is key
   gamma: 0.95
   ac_update_freq: 1
 
@@ -43,4 +43,4 @@ agent:
   beta_end: 10000
 
   k_future: 8
-  max_eps_len: 50 
+  max_eps_len: 50

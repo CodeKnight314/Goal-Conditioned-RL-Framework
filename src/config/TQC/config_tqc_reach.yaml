@@ -11,7 +11,7 @@ gradient_step: 40
 reset_freq: 1000000000
 
 agent:
-  hidden_dim: 256
+  hidden_dim: 64
   layer_count: 3
 
   actor_lr: 0.0003
@@ -24,20 +24,24 @@ agent:
 
   alpha_lr: 0.0003
 
+  # TQC specific parameters
+  num_critics: 5
+  top_quantiles_to_drop: 2
+
   buffer_type: "HER"
   max_len: 1000000
   alpha: 0.6
 
-  batch_size: 512
-  gamma: 0.98
+  batch_size: 1024
+  gamma: 0.95
   ac_update_freq: 1
 
   noise_std: 0.0
   noise_clamp: 0.0
 
   policy_noise: 0.0
-  grad_clip: 2.0
-  tau: 0.005
+  grad_clip: 5.0
+  tau: 0.05
 
   beta: 0.4
   beta_end: 10000

@@ -24,11 +24,15 @@ agent:
 
   alpha_lr: 0.0003
 
+  # TQC specific parameters
+  num_critics: 5
+  top_quantiles_to_drop: 2
+
   buffer_type: "HER"
   max_len: 1000000
   alpha: 0.6
 
-  batch_size: 2048 # Keep same as reach - stability is key
+  batch_size: 1024 # Keep same as reach - stability is key
   gamma: 0.95
   ac_update_freq: 1
 
@@ -36,7 +40,7 @@ agent:
   noise_clamp: 0.0
 
   policy_noise: 0.0
-  grad_clip: 10.0
+  grad_clip: 5.0
   tau: 0.05
 
   beta: 0.4
