@@ -649,7 +649,7 @@ class GoalEnvHER:
             (width, height),
         )
         total_rewards = total_steps = 0
-        for ep in range(num_episodes):
+        for ep in tqdm(range(num_episodes), desc="Episode: "):
             state, _ = env.reset()
             done, rewards, steps = False, 0, 0
             while not done:
