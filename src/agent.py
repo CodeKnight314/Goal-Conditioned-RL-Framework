@@ -1,20 +1,28 @@
 from src.model import Actor, Critic, SACActorModel
-from src.buffer import PERBuffer, ReplayBuffer, HERBuffer, PERBufferSumTree
-from src.utils import AgentConfig
+from src.buffer import PERBuffer, ReplayBuffer, HERBuffer
+from src.utils import BaseAgentConfig, SACAgentConfig
 import torch
-from torch.optim import AdamW, lr_scheduler
+from torch.optim import AdamW, lr_scheduler, Adam
 import os
 import numpy as np
 import torch.nn as nn
+import random
 
 
 class TD3Agent:
     def __init__(
-        self, obs_dim: int, ac_dim: int, config: AgentConfig, weights: str, nenvs: int
+        self,
+        obs_dim: int,
+        ac_dim: int,
+        config: BaseAgentConfig,
+        weights: str,
+        nenvs: int,
+        gradient_step: int,
     ):
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.config = config
+        self.gradient_step = gradient_step
 
         self.actor = Actor(
             obs_dim, self.config.hidden_dim, ac_dim, self.config.layer_count
@@ -58,8 +66,6 @@ class TD3Agent:
 
         if self.config.buffer_type == "PER":
             self.buffer = PERBuffer(self.config.max_len, self.config.alpha)
-        elif self.config.buffer_type == "PER_SUMTREE":
-            self.buffer = PERBufferSumTree(self.config.max_len, self.config.alpha)
         elif self.config.buffer_type == "REPLAY":
             self.buffer = ReplayBuffer(self.config.max_len)
         elif self.config.buffer_type == "HER":
@@ -260,7 +266,7 @@ class TD3Agent:
                 self.device
             )
             with torch.no_grad():
-                return np.clip(torch.tanh(self.actor(obs_tensor)).cpu().numpy(), -1, 1)
+                return self.actor(obs_tensor).cpu().numpy()
 
     def push(self, state, action, reward, next_state, done):
         self.buffer.push(state, action, reward, next_state, done)
@@ -274,9 +280,7 @@ class TD3Agent:
 
     def update(self, step: int):
         self.set_train()
-        if isinstance(self.buffer, PERBuffer) or isinstance(
-            self.buffer, PERBufferSumTree
-        ):
+        if isinstance(self.buffer, PERBuffer):
             states, actions, rewards, next_states, dones, weights, indices = (
                 self.buffer.sample(self.batch_size, self.beta)
             )
@@ -336,23 +340,23 @@ class TD3Agent:
         self.target_critic_1.eval()
         self.target_critic_2.eval()
 
-    def update_normalizers(self, obs_list, dg_list, normalize):
-        if hasattr(self.buffer, "obs_normalizer") and obs_list and normalize:
+    def update_normalizers(self, obs_list, dg_list, obs_normalize, g_normalize):
+        if hasattr(self.buffer, "obs_normalizer") and obs_list and obs_normalize:
             combined_obs = np.concatenate(obs_list, axis=0)
             self.buffer.obs_normalizer.update(combined_obs)
 
-        if hasattr(self.buffer, "dg_normalizer") and dg_list and normalize:
+        if hasattr(self.buffer, "dg_normalizer") and dg_list and g_normalize:
             combined_dg = np.concatenate(dg_list, axis=0)
             self.buffer.dg_normalizer.update(combined_dg)
 
-    def normalize_state_batch(self, obs_batch, dg_batch, normalize):
+    def normalize_state_batch(self, obs_batch, dg_batch, obs_normalize, g_normalize):
         if hasattr(self.buffer, "obs_normalizer"):
-            normalized_obs = self.normalize_obs(obs_batch, normalize)
+            normalized_obs = self.normalize_obs(obs_batch, obs_normalize)
         else:
             normalized_obs = obs_batch
 
-        if hasattr(self.buffer, "dg_normalizer") and normalize:
-            normalized_dg = self.normalize_goal(dg_batch, normalize)
+        if hasattr(self.buffer, "dg_normalizer"):
+            normalized_dg = self.normalize_goal(dg_batch, g_normalize)
         else:
             normalized_dg = dg_batch
 
@@ -383,11 +387,18 @@ class TD3Agent:
 
 class SACAgent:
     def __init__(
-        self, obs_dim: int, ac_dim: int, config: AgentConfig, weights: str, nenvs: int
+        self,
+        obs_dim: int,
+        ac_dim: int,
+        config: SACAgentConfig,
+        weights: str,
+        nenvs: int,
+        gradient_step: int,
     ):
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.config = config
+        self.gradient_step = gradient_step
 
         self.actor = SACActorModel(
             obs_dim, self.config.hidden_dim, ac_dim, self.config.layer_count
@@ -410,10 +421,11 @@ class SACAgent:
         self.critic_1_opt = AdamW(self.critic_1.parameters(), self.config.critic_lr)
         self.critic_2_opt = AdamW(self.critic_2.parameters(), self.config.critic_lr)
 
-        self.target_entropy = -ac_dim
+        self.target_entropy = -ac_dim * 0.5
         self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
         self.alpha = self.log_alpha.exp()
         self.alpha_opt = AdamW([self.log_alpha], lr=self.config.alpha_lr)
+        self.train_alpha = False
 
         self.actor_scheduler = lr_scheduler.CosineAnnealingLR(
             self.actor_opt,
@@ -433,8 +445,6 @@ class SACAgent:
 
         if self.config.buffer_type == "PER":
             self.buffer = PERBuffer(self.config.max_len, self.config.alpha)
-        elif self.config.buffer_type == "PER_SUMTREE":
-            self.buffer = PERBufferSumTree(self.config.max_len, self.config.alpha)
         elif self.config.buffer_type == "REPLAY":
             self.buffer = ReplayBuffer(self.config.max_len)
         elif self.config.buffer_type == "HER":
@@ -459,6 +469,8 @@ class SACAgent:
         self.beta_start = self.config.beta
         self.beta_max = 1.0
         self.beta_end = self.config.beta_end
+        self.alpha_min = getattr(self.config, "alpha_min", 0.05)
+        self.alpha_min_steps = getattr(self.config, "alpha_min_steps", 10000)
 
         if weights:
             self.actor.load(os.path.join(weights, "actor.pth"), self.device)
@@ -505,7 +517,8 @@ class SACAgent:
         q2_values = self.critic_2(torch.cat([states, actions], dim=-1))
         min_q_values = torch.min(q1_values, q2_values)
 
-        actor_loss = (self.alpha.detach() * log_probs - min_q_values).mean()
+        # actor_loss = (self.alpha.detach() * log_probs - min_q_values).mean()
+        actor_loss = (0.2 * log_probs - min_q_values).mean()
 
         self.actor_opt.zero_grad()
         actor_loss.backward()
@@ -516,7 +529,10 @@ class SACAgent:
 
         return actor_loss.item(), actor_grad_norm, log_probs.detach()
 
-    def alpha_update(self, log_probs: torch.Tensor):
+    def alpha_update(self, log_probs: torch.Tensor, gradient_step: int):
+        if gradient_step <= self.alpha_min_steps:
+            return 0.0
+
         alpha_loss = -(
             self.log_alpha * (log_probs + self.target_entropy).detach()
         ).mean()
@@ -526,6 +542,7 @@ class SACAgent:
         self.alpha_opt.step()
 
         self.alpha = self.log_alpha.exp()
+
         return alpha_loss.item()
 
     def critic_update(
@@ -548,7 +565,8 @@ class SACAgent:
             )
             target_q = torch.min(target_q1, target_q2)
 
-            target_q = target_q - self.alpha * next_log_probs
+            # target_q = target_q - self.alpha * next_log_probs
+            target_q = target_q - 0.2 * next_log_probs
             target = reward + self.gamma * (1 - done) * target_q
 
         current_critic_input = torch.cat([state, action], dim=-1)
@@ -640,9 +658,7 @@ class SACAgent:
 
     def update(self, step: int):
         self.set_train()
-        if isinstance(self.buffer, PERBuffer) or isinstance(
-            self.buffer, PERBufferSumTree
-        ):
+        if isinstance(self.buffer, PERBuffer):
             states, actions, rewards, next_states, dones, weights, indices = (
                 self.buffer.sample(self.batch_size, self.beta)
             )
@@ -661,11 +677,13 @@ class SACAgent:
             )
 
         self.beta_scheduler(step)
-        self.update_critic(self.tau)
+
+        if step % self.gradient_step == 0:
+            self.update_critic(self.tau)
 
         if step % self.ac_update_freq == 0:
             ac_loss, ac_grad, log_probs = self.actor_update(states)
-            alpha_loss = self.alpha_update(log_probs)
+            alpha_loss = self.alpha_update(log_probs, gradient_step=step)
             return (
                 q1_loss,
                 q2_loss,
@@ -703,23 +721,23 @@ class SACAgent:
         self.target_critic_1.eval()
         self.target_critic_2.eval()
 
-    def update_normalizers(self, obs_list, dg_list, normalize):
-        if hasattr(self.buffer, "obs_normalizer") and obs_list and normalize:
+    def update_normalizers(self, obs_list, dg_list, obs_normalize, g_normalize):
+        if hasattr(self.buffer, "obs_normalizer") and obs_list and obs_normalize:
             combined_obs = np.concatenate(obs_list, axis=0)
             self.buffer.obs_normalizer.update(combined_obs)
 
-        if hasattr(self.buffer, "dg_normalizer") and dg_list and normalize:
+        if hasattr(self.buffer, "dg_normalizer") and dg_list and g_normalize:
             combined_dg = np.concatenate(dg_list, axis=0)
             self.buffer.dg_normalizer.update(combined_dg)
 
-    def normalize_state_batch(self, obs_batch, dg_batch, normalize):
+    def normalize_state_batch(self, obs_batch, dg_batch, obs_normalize, g_normalize):
         if hasattr(self.buffer, "obs_normalizer"):
-            normalized_obs = self.normalize_obs(obs_batch, normalize)
+            normalized_obs = self.normalize_obs(obs_batch, obs_normalize)
         else:
             normalized_obs = obs_batch
 
-        if hasattr(self.buffer, "dg_normalizer") and normalize:
-            normalized_dg = self.normalize_goal(dg_batch, normalize)
+        if hasattr(self.buffer, "dg_normalizer"):
+            normalized_dg = self.normalize_goal(dg_batch, g_normalize)
         else:
             normalized_dg = dg_batch
 
@@ -751,13 +769,21 @@ class SACAgent:
         self.alpha_opt = AdamW([self.log_alpha], lr=self.config.alpha_lr)
 
 
+# Pending fixes to actor and critic update()
 class TQCAgent:
     def __init__(
-        self, obs_dim: int, ac_dim: int, config: AgentConfig, weights: str, nenvs: int
+        self,
+        obs_dim: int,
+        ac_dim: int,
+        config: SACAgentConfig,
+        weights: str,
+        nenvs: int,
+        gradient_step: int,
     ):
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.config = config
+        self.gradient_step = gradient_step
 
         # Number of critics for TQC (typically 5-10)
         self.num_critics = getattr(config, "num_critics", 5)
@@ -812,8 +838,6 @@ class TQCAgent:
 
         if self.config.buffer_type == "PER":
             self.buffer = PERBuffer(self.config.max_len, self.config.alpha)
-        elif self.config.buffer_type == "PER_SUMTREE":
-            self.buffer = PERBufferSumTree(self.config.max_len, self.config.alpha)
         elif self.config.buffer_type == "REPLAY":
             self.buffer = ReplayBuffer(self.config.max_len)
         elif self.config.buffer_type == "HER":
@@ -838,6 +862,8 @@ class TQCAgent:
         self.beta_start = self.config.beta
         self.beta_max = 1.0
         self.beta_end = self.config.beta_end
+        self.alpha_min = getattr(self.config, "alpha_min", 0.05)
+        self.alpha_min_steps = getattr(self.config, "alpha_min_steps", 10000)
 
         if weights:
             self.actor.load(os.path.join(weights, "actor.pth"), self.device)
@@ -907,7 +933,10 @@ class TQCAgent:
 
         return actor_loss.item(), actor_grad_norm, log_probs.detach()
 
-    def alpha_update(self, log_probs: torch.Tensor):
+    def alpha_update(self, log_probs: torch.Tensor, gradient_steps: int):
+        if gradient_steps <= self.alpha_min_steps:
+            return 0.0
+
         alpha_loss = -(
             self.log_alpha * (log_probs + self.target_entropy).detach()
         ).mean()
@@ -931,7 +960,6 @@ class TQCAgent:
         with torch.no_grad():
             next_actions, next_log_probs = self.actor.sample(next_state)
 
-            # Get target Q-values from all target critics
             target_critic_inputs = torch.cat([next_state, next_actions], dim=-1)
             target_q_values = torch.stack(
                 [
@@ -940,7 +968,6 @@ class TQCAgent:
                 ]
             )
 
-            # Use truncated mean for target (conservative estimate)
             if self.top_quantiles_to_drop > 0:
                 target_q_sorted, _ = torch.sort(target_q_values, dim=0)
                 target_q_truncated = target_q_sorted[: -self.top_quantiles_to_drop]
@@ -951,7 +978,6 @@ class TQCAgent:
             target_q = target_q - self.alpha * next_log_probs
             target = reward + self.gamma * (1 - done) * target_q
 
-        # Update all critics
         critic_losses = []
         critic_grads = []
         all_td_errors = []
@@ -981,21 +1007,17 @@ class TQCAgent:
             critic_losses.append(critic_loss.item())
             critic_grads.append(critic_grad_norm)
 
-            # Calculate TD errors for this critic
             td_error = torch.abs(current_q_value - target).detach()
             all_td_errors.append(td_error)
 
-        # Aggregate metrics
         avg_critic_loss = np.mean(critic_losses)
         avg_critic_grad = np.mean(critic_grads)
 
-        # Calculate average Q-value across all critics
         all_q_values = torch.stack(
             [critic(current_critic_input) for critic in self.critics]
         )
         q_value = all_q_values.mean().detach().cpu().item()
 
-        # Use max TD error across critics for priority updates
         max_td_errors = torch.stack(all_td_errors).max(dim=0)[0]
 
         if weights is not None and weights.numel() > 0:
@@ -1039,9 +1061,7 @@ class TQCAgent:
 
     def update(self, step: int):
         self.set_train()
-        if isinstance(self.buffer, PERBuffer) or isinstance(
-            self.buffer, PERBufferSumTree
-        ):
+        if isinstance(self.buffer, PERBuffer):
             states, actions, rewards, next_states, dones, weights, indices = (
                 self.buffer.sample(self.batch_size, self.beta)
             )
@@ -1064,7 +1084,7 @@ class TQCAgent:
 
         if step % self.ac_update_freq == 0:
             ac_loss, ac_grad, log_probs = self.actor_update(states)
-            alpha_loss = self.alpha_update(log_probs)
+            alpha_loss = self.alpha_update(log_probs, gradient_steps=step)
             return (
                 q1_loss,
                 q2_loss,
@@ -1102,23 +1122,23 @@ class TQCAgent:
         for target_critic in self.target_critics:
             target_critic.eval()
 
-    def update_normalizers(self, obs_list, dg_list, normalize):
-        if hasattr(self.buffer, "obs_normalizer") and obs_list and normalize:
+    def update_normalizers(self, obs_list, dg_list, obs_normalize, g_normalize):
+        if hasattr(self.buffer, "obs_normalizer") and obs_list and obs_normalize:
             combined_obs = np.concatenate(obs_list, axis=0)
             self.buffer.obs_normalizer.update(combined_obs)
 
-        if hasattr(self.buffer, "dg_normalizer") and dg_list and normalize:
+        if hasattr(self.buffer, "dg_normalizer") and dg_list and g_normalize:
             combined_dg = np.concatenate(dg_list, axis=0)
             self.buffer.dg_normalizer.update(combined_dg)
 
-    def normalize_state_batch(self, obs_batch, dg_batch, normalize):
+    def normalize_state_batch(self, obs_batch, dg_batch, obs_normalize, g_normalize):
         if hasattr(self.buffer, "obs_normalizer"):
-            normalized_obs = self.normalize_obs(obs_batch, normalize)
+            normalized_obs = self.normalize_obs(obs_batch, obs_normalize)
         else:
             normalized_obs = obs_batch
 
-        if hasattr(self.buffer, "dg_normalizer") and normalize:
-            normalized_dg = self.normalize_goal(dg_batch, normalize)
+        if hasattr(self.buffer, "dg_normalizer"):
+            normalized_dg = self.normalize_goal(dg_batch, g_normalize)
         else:
             normalized_dg = dg_batch
 
@@ -1152,11 +1172,18 @@ class TQCAgent:
 
 class DDPG:
     def __init__(
-        self, obs_dim: int, ac_dim: int, config: AgentConfig, weights: str, nenvs: int
+        self,
+        obs_dim: int,
+        ac_dim: int,
+        config: BaseAgentConfig,
+        weights: str,
+        nenvs: int,
+        gradient_step: int,
     ):
 
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.config = config
+        self.gradient_step = gradient_step
 
         self.actor = Actor(
             obs_dim, self.config.hidden_dim, ac_dim, self.config.layer_count
@@ -1171,8 +1198,8 @@ class DDPG:
             obs_dim + ac_dim, self.config.hidden_dim, self.config.layer_count
         ).to(self.device)
 
-        self.actor_opt = AdamW(self.actor.parameters(), self.config.actor_lr)
-        self.critic_opt = AdamW(self.critic.parameters(), self.config.critic_lr)
+        self.actor_opt = Adam(self.actor.parameters(), self.config.actor_lr)
+        self.critic_opt = Adam(self.critic.parameters(), self.config.critic_lr)
         self.actor_scheduler = lr_scheduler.CosineAnnealingLR(
             self.actor_opt,
             T_max=self.config.ac_scheduler_steps,
@@ -1186,8 +1213,6 @@ class DDPG:
 
         if self.config.buffer_type == "PER":
             self.buffer = PERBuffer(self.config.max_len, self.config.alpha)
-        elif self.config.buffer_type == "PER_SUMTREE":
-            self.buffer = PERBufferSumTree(self.config.max_len, self.config.alpha)
         elif self.config.buffer_type == "REPLAY":
             self.buffer = ReplayBuffer(self.config.max_len)
         elif self.config.buffer_type == "HER":
@@ -1213,6 +1238,7 @@ class DDPG:
         self.beta_start = self.config.beta
         self.beta_max = 1.0
         self.beta_end = self.config.beta_end
+        self.ac_dim = ac_dim
 
         if weights:
             self.actor.load(os.path.join(weights, "actor.pth"), self.device)
@@ -1231,17 +1257,18 @@ class DDPG:
             self.target_actor.load_state_dict(self.actor.state_dict())
             self.target_critic.load_state_dict(self.critic.state_dict())
         else:
-            for target_param, param in zip(
-                self.target_actor.parameters(), self.actor.parameters()
-            ):
-                target_param.data.copy_(
-                    tau * param.data + (1 - tau) * target_param.data
-                )
+            with torch.no_grad():
+                for target_param, param in zip(
+                    self.target_actor.parameters(), self.actor.parameters()
+                ):
+                    target_param.data.copy_(
+                        tau * param.data + (1 - tau) * target_param.data
+                    )
 
-            for target_param, param in zip(
-                self.target_critic.parameters(), self.critic.parameters()
-            ):
-                target_param.copy_(tau * param.data + (1 - tau) * target_param.data)
+                for target_param, param in zip(
+                    self.target_critic.parameters(), self.critic.parameters()
+                ):
+                    target_param.copy_(tau * param.data + (1 - tau) * target_param.data)
 
     def beta_scheduler(self, step: int):
         ratio = step / self.beta_end
@@ -1287,6 +1314,7 @@ class DDPG:
                 torch.cat([next_states, next_actions], dim=-1)
             )
             y = rewards + self.gamma * (1.0 - dones) * target_q
+            y = torch.clamp(y, min=-1.0 / (1.0 - self.gamma), max=0.0)
 
         current_q = self.critic(torch.cat([states, actions], dim=-1))
         td_errors = torch.abs(y - current_q).detach()
@@ -1317,6 +1345,11 @@ class DDPG:
     def select_action(self, obs_tensor: np.array, eval_action: bool = False):
         self.set_eval()
         if not eval_action:
+            if random.random() < 0.2:
+                return np.clip(
+                    np.random.randn(obs_tensor.shape[0], self.ac_dim), a_min=-1, a_max=1
+                )
+
             obs_tensor = torch.as_tensor(obs_tensor, dtype=torch.float32).to(
                 self.device
             )
@@ -1344,9 +1377,7 @@ class DDPG:
 
     def update(self, step: int):
         self.set_train()
-        if isinstance(self.buffer, PERBuffer) or isinstance(
-            self.buffer, PERBufferSumTree
-        ):
+        if isinstance(self.buffer, PERBuffer):
             states, actions, rewards, next_states, dones, weights, indices = (
                 self.buffer.sample(self.batch_size, self.beta)
             )
@@ -1363,7 +1394,8 @@ class DDPG:
             )
 
         self.beta_scheduler(step)
-        self.update_target_network(hard_update=False, tau=self.tau)
+        if step % 40 == 0:
+            self.update_target_network(hard_update=False, tau=self.tau)
 
         if step % self.ac_update_freq == 0:
             ac_loss, ac_grad = self.actor_update(states)
@@ -1390,23 +1422,23 @@ class DDPG:
         self.target_actor.eval()
         self.target_critic.eval()
 
-    def update_normalizers(self, obs_list, dg_list, normalize):
-        if hasattr(self.buffer, "obs_normalizer") and obs_list and normalize:
+    def update_normalizers(self, obs_list, dg_list, obs_normalize, g_normalize):
+        if hasattr(self.buffer, "obs_normalizer") and obs_list and obs_normalize:
             combined_obs = np.concatenate(obs_list, axis=0)
             self.buffer.obs_normalizer.update(combined_obs)
 
-        if hasattr(self.buffer, "dg_normalizer") and dg_list and normalize:
+        if hasattr(self.buffer, "dg_normalizer") and dg_list and g_normalize:
             combined_dg = np.concatenate(dg_list, axis=0)
             self.buffer.dg_normalizer.update(combined_dg)
 
-    def normalize_state_batch(self, obs_batch, dg_batch, normalize):
+    def normalize_state_batch(self, obs_batch, dg_batch, obs_normalize, g_normalize):
         if hasattr(self.buffer, "obs_normalizer"):
-            normalized_obs = self.normalize_obs(obs_batch, normalize)
+            normalized_obs = self.normalize_obs(obs_batch, obs_normalize)
         else:
             normalized_obs = obs_batch
 
-        if hasattr(self.buffer, "dg_normalizer") and normalize:
-            normalized_dg = self.normalize_goal(dg_batch, normalize)
+        if hasattr(self.buffer, "dg_normalizer"):
+            normalized_dg = self.normalize_goal(dg_batch, g_normalize)
         else:
             normalized_dg = dg_batch
 
