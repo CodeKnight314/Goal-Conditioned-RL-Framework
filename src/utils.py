@@ -7,7 +7,7 @@ import yaml
 from pydantic import BaseModel, Field
 
 
-class AgentConfig(BaseModel):
+class BaseAgentConfig(BaseModel):
     hidden_dim: int = Field(..., ge=1)
     layer_count: int = Field(..., ge=1)
     actor_lr: float = Field(..., gt=0)
@@ -16,7 +16,6 @@ class AgentConfig(BaseModel):
     critic_lr: float = Field(..., gt=0)
     critic_lr_min: float = Field(..., gt=0)
     cr_scheduler_steps: int = Field(..., ge=1)
-    alpha_lr: float = Field(default=0.0003, gt=0)  # SAC temperature learning rate
     buffer_type: str
     max_len: int = Field(..., ge=1)
     alpha: float = Field(..., ge=0)
@@ -34,6 +33,12 @@ class AgentConfig(BaseModel):
     tau: float = Field(..., ge=0)
 
 
+class SACAgentConfig(BaseAgentConfig):
+    alpha_lr: float = Field(default=0.0003, gt=0)
+    alpha_min: float = Field(default=0.05, gt=0)
+    alpha_min_steps: float = Field(..., ge=0)
+
+
 class Config(BaseModel):
     max_frames: int = Field(..., ge=1)
     save_freq: int = Field(..., ge=1)
@@ -41,7 +46,9 @@ class Config(BaseModel):
     window_size: int = Field(..., ge=1)
     gradient_step: int = Field(..., ge=1)
     reset_freq: int = Field(..., ge=1)
-    agent: AgentConfig
+    g_normalize: bool = Field(default=True)
+    obs_normalize: bool = Field(default=True)
+    agent: BaseAgentConfig | SACAgentConfig
 
 
 class HERConfig(BaseModel):
@@ -52,7 +59,10 @@ class HERConfig(BaseModel):
     video_freq: int = Field(..., ge=1)
     window_size: int = Field(..., ge=1)
     gradient_step: int = Field(..., ge=1)
-    agent: AgentConfig
+    reset_freq: int = Field(..., ge=1)
+    g_normalize: bool = Field(default=False)
+    obs_normalize: bool = Field(default=True)
+    agent: BaseAgentConfig | SACAgentConfig
 
 
 class RunningNormalizer:
@@ -124,15 +134,63 @@ class TerminateOnAchieve(gym.Wrapper):
         return distances < self.threshold
 
 
-def load_config(path: str) -> Config:
+class TimeFeatureWrapperDictObs(gym.ObservationWrapper):
+    def __init__(self, env):
+        super().__init__(env)
+
+        assert isinstance(env.observation_space, gym.spaces.Dict)
+        assert "observation" in env.observation_space.spaces
+
+        self.max_steps = env.spec.max_episode_steps
+        self.current_step = 0
+
+        obs_space = env.observation_space.spaces["observation"]
+        assert isinstance(obs_space, gym.spaces.Box)
+
+        low = np.append(obs_space.low, 0.0)
+        high = np.append(obs_space.high, 1.0)
+
+        self.observation_space = gym.spaces.Dict(
+            {
+                **env.observation_space.spaces,
+                "observation": gym.spaces.Box(low=low, high=high, dtype=np.float64),
+            }
+        )
+
+    def observation(self, observation):
+        obs = observation.copy()
+        time_feature = np.array([self.current_step / self.max_steps], dtype=np.float32)
+        obs["observation"] = np.concatenate((obs["observation"], time_feature), axis=-1)
+        return obs
+
+    def step(self, action):
+        self.current_step += 1
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        return self.observation(obs), reward, terminated, truncated, info
+
+    def reset(self, **kwargs):
+        self.current_step = 0
+        obs, info = self.env.reset(**kwargs)
+        return self.observation(obs), info
+
+
+def load_config(path: str, agent_type: str) -> Config:
     with open(path, "r") as f:
         cfg = yaml.safe_load(f)
+    if agent_type in ["SAC", "TQC"]:
+        cfg["agent"] = SACAgentConfig(**cfg["agent"])
+    else:
+        cfg["agent"] = BaseAgentConfig(**cfg["agent"])
     return Config(**cfg)
 
 
-def load_her_config(path: str) -> HERConfig:
+def load_her_config(path: str, agent_type: str) -> HERConfig:
     with open(path, "r") as f:
         cfg = yaml.safe_load(f)
+    if agent_type in ["SAC", "TQC"]:
+        cfg["agent"] = SACAgentConfig(**cfg["agent"])
+    else:
+        cfg["agent"] = BaseAgentConfig(**cfg["agent"])
     return HERConfig(**cfg)
 
 
