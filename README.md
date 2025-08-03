@@ -1,22 +1,24 @@
 <table align="center">
   <tr>
     <td align="center">
-      <img src="resources/video/PandaReach-v3-DDPG.gif" width="250" style="border:1px solid black;"/>
+      <img src="resources/video/PandaReach-v3-DDPG.gif" width="384" style="border:1px solid black;"/>
       <br>
       <sub><b>PandaReach-v3</b></sub>
     </td>
     <td align="center">
-      <img src="resources/video/PandaPush-v3-DDPG.gif" width="250" style="border:1px solid black;"/>
+      <img src="resources/video/PandaPush-v3-DDPG.gif" width="384" style="border:1px solid black;"/>
       <br>
       <sub><b>PandaPush-v3</b></sub>
     </td>
+  </tr>
+  <tr>
     <td align="center">
-      <img src="resources/video/PandaSlide-v3-DDPG.gif" width="250" style="border:1px solid black;"/>
+      <img src="resources/video/PandaSlide-v3-DDPG.gif" width="384" style="border:1px solid black;"/>
       <br>
       <sub><b>PandaSlide-v3</b></sub>
     </td>
     <td align="center">
-      <img src="resources/video/PandaReach-v3-DDPG.gif" width="250" style="border:1px solid black;"/>
+      <img src="resources/video/PandaReach-v3-DDPG.gif" width="384" style="border:1px solid black;"/>
       <br>
       <sub><b>PandaReach-v3</b></sub>
     </td>
