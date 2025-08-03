@@ -1,44 +1,26 @@
 import argparse
-from src.env import PandasEnv, PandasHEREnv
-
-MAPPING = {
-    "reach": "FetchReachDense-v4",
-    "push": "FetchPushDense-v4",
-    "slide": "FetchSlideDense-v4",
-    "pickplace": "FetchPickAndPlaceDense-v4",
-}
+from src.env import GoalEnvHER
 
 HER_MAPPING = {
-    "reach": "FetchReach-v4",
-    "push": "FetchPush-v4",
-    "slide": "FetchSlide-v4",
-    "pickplace": "FetchPickAndPlace-v4",
+    "reach": "PandaReach-v3",
+    "push": "PandaPush-v3",
+    "slide": "PandaSlide-v3",
+    "pickplace": "PandaPickAndPlace-v3",
 }
 
 
 def main(args):
-    if args.her:
-        env = PandasHEREnv(
-            HER_MAPPING[args.id],
-            args.seed,
-            args.c,
-            args.nenv,
-            args.w,
-            args.verbose,
-            not args.no_wandb,
-            args.agent,
-        )
-    else:
-        env = PandasEnv(
-            MAPPING[args.id],
-            args.seed,
-            args.c,
-            args.nenv,
-            args.w,
-            args.verbose,
-            not args.no_wandb,
-            args.agent,
-        )
+    env = GoalEnvHER(
+        env_id=HER_MAPPING[args.id],
+        seed=args.seed,
+        config=args.c,
+        num_envs=args.nenv,
+        weights=args.w,
+        verbose=args.verbose,
+        use_wandb=not args.no_wandb,
+        agent_type=args.agent,
+        her=args.her,
+    )
 
     if args.mode == "train":
         env.train(args.o)
@@ -50,7 +32,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="CLI Helper for Pandas Environment")
-    parser.add_argument("--id", type=str, default="reach", choices=list(MAPPING.keys()))
+    parser.add_argument(
+        "--id", type=str, default="reach", choices=list(HER_MAPPING.keys())
+    )
     parser.add_argument(
         "--c", type=str, required=True, help="Path to config file for environment"
     )
@@ -89,7 +73,7 @@ if __name__ == "__main__":
         type=str,
         default="TD3",
         choices=["TD3", "SAC", "TQC", "DDPG"],
-        help="Agent type to use (TD3 or SAC)",
+        help="Agent type to use",
     )
     parser.add_argument(
         "--seed", type=int, default=1898, help="Seed for reproducibility"
