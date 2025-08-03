@@ -28,7 +28,7 @@ agent:
   max_len: 1000000
   alpha: 1.0
 
-  batch_size: 256
+  batch_size: 512
   gamma: 0.98
   ac_update_freq: 1
 

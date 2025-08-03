@@ -1,6 +1,6 @@
-max_epoch: 200
+max_epoch: 300
 max_cycle: 50
-max_episode: 16
+max_episode: 32
 max_frames: 1000000
 
 save_freq: 1
@@ -11,7 +11,7 @@ gradient_step: 40
 reset_freq: 1000000000
 
 agent:
-  hidden_dim: 64
+  hidden_dim: 256
   layer_count: 3
 
   actor_lr: 0.001
@@ -28,7 +28,7 @@ agent:
   max_len: 1000000
   alpha: 1.0
 
-  batch_size: 256
+  batch_size: 512
   gamma: 0.98
   ac_update_freq: 1
 
@@ -42,7 +42,7 @@ agent:
   beta: 1.0
   beta_end: 1.0
 
-  k_future: 4
+  k_future: 8
   max_eps_len: 50
 
 g_normalize: false
