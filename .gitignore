@@ -11,3 +11,13 @@ src/__pycache__/main.cpython-312.pyc
 src/__pycache__/main.cpython-313.pyc
 src/__pycache__/model.cpython-312.pyc
 src/__pycache__/utils.cpython-312.pyc
+wandb/debug-internal.log
+wandb/debug.log
+wandb/latest-run
+wandb/run-20250802_234748-3wucwbw1/run-3wucwbw1.wandb
+wandb/run-20250802_234748-3wucwbw1/files/output.log
+wandb/run-20250802_234748-3wucwbw1/files/requirements.txt
+wandb/run-20250802_234748-3wucwbw1/files/wandb-metadata.json
+wandb/run-20250802_234748-3wucwbw1/logs/debug-core.log
+wandb/run-20250802_234748-3wucwbw1/logs/debug-internal.log
+wandb/run-20250802_234748-3wucwbw1/logs/debug.log
