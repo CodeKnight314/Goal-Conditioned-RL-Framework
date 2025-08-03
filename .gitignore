@@ -1,3 +1,13 @@
 .DS_Store
 experiment_script.txt
 setup.sh
+src/__pycache__/__init__.cpython-312.pyc
+src/__pycache__/__init__.cpython-313.pyc
+src/__pycache__/agent.cpython-312.pyc
+src/__pycache__/buffer.cpython-312.pyc
+src/__pycache__/env.cpython-312.pyc
+src/__pycache__/env.cpython-313.pyc
+src/__pycache__/main.cpython-312.pyc
+src/__pycache__/main.cpython-313.pyc
+src/__pycache__/model.cpython-312.pyc
+src/__pycache__/utils.cpython-312.pyc
