@@ -1,6 +1,6 @@
-max_episode: 16
-max_cycle: 50
-max_epoch: 200
+max_episode: 32
+max_cycle: 100
+max_epoch: 100
 
 max_frames: 5000000
 save_freq: 1
@@ -12,19 +12,18 @@ reset_freq: 1000000000
 
 agent:
   hidden_dim: 64
-  layer_count: 3
+  layer_count: 2
 
-  actor_lr: 0.0003
-  actor_lr_min: 0.0001
+  actor_lr: 0.001
+  actor_lr_min: 0.001
   ac_scheduler_steps: 50000
 
-  critic_lr: 0.0003
-  critic_lr_min: 0.0001
+  critic_lr: 0.001
+  critic_lr_min: 0.001
   cr_scheduler_steps: 50000
 
   alpha_lr: 0.0003
 
-  # TQC specific parameters
   num_critics: 5
   top_quantiles_to_drop: 2
 
@@ -32,7 +31,7 @@ agent:
   max_len: 1000000
   alpha: 0.6
 
-  batch_size: 1024
+  batch_size: 256
   gamma: 0.95
   ac_update_freq: 1
 
@@ -41,10 +40,13 @@ agent:
 
   policy_noise: 0.0
   grad_clip: 5.0
-  tau: 0.05
+  tau: 0.005
 
   beta: 0.4
   beta_end: 10000
 
   k_future: 4
   max_eps_len: 50
+
+g_normalize: false
+obs_normalize: true

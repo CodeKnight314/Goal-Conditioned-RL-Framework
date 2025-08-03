@@ -1,6 +1,6 @@
-max_episode: 16
-max_cycle: 50
-max_epoch: 200
+max_episode: 32
+max_cycle: 100
+max_epoch: 15
 
 max_frames: 5000000
 save_freq: 1
@@ -14,15 +14,15 @@ agent:
   hidden_dim: 256
   layer_count: 3
 
-  actor_lr: 0.0003
-  actor_lr_min: 0.0001
+  actor_lr: 0.001
+  actor_lr_min: 0.001
   ac_scheduler_steps: 50000
 
-  critic_lr: 0.0003
-  critic_lr_min: 0.0001
+  critic_lr: 0.001
+  critic_lr_min: 0.001
   cr_scheduler_steps: 50000
 
-  alpha_lr: 0.0003
+  alpha_lr: 0.0000
 
   buffer_type: "HER"
   max_len: 1000000
@@ -30,17 +30,20 @@ agent:
 
   batch_size: 512
   gamma: 0.98
-  ac_update_freq: 1
+  ac_update_freq: 2
 
-  noise_std: 0.0
-  noise_clamp: 0.0
+  noise_std: 0.1
+  noise_clamp: 0.5
 
-  policy_noise: 0.0
+  policy_noise: 0.2
   grad_clip: 2.0
   tau: 0.005
 
   beta: 0.4
   beta_end: 10000
 
-  k_future: 4
+  k_future: 8
   max_eps_len: 50
+
+g_normalize: false
+obs_normalize: true

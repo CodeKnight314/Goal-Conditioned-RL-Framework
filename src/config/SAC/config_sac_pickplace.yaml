@@ -1,8 +1,8 @@
-max_episode: 16
+max_episode: 32
 max_cycle: 100
-max_epoch: 250 # Increased for most complex task
+max_epoch: 100
 
-max_frames: 12000000 # Increased for most complex task
+max_frames: 8000000
 save_freq: 1
 video_freq: 10
 window_size: 100
@@ -11,24 +11,26 @@ gradient_step: 40
 reset_freq: 1000000000
 
 agent:
-  hidden_dim: 320 # Modest increase from 256 - compromise between capacity and stability
+  hidden_dim: 256
   layer_count: 3
 
-  actor_lr: 0.0003 # Keep same as reach
-  actor_lr_min: 0.0001
-  ac_scheduler_steps: 60000 # Slightly longer schedule
+  actor_lr: 0.0005
+  actor_lr_min: 0.0005
+  ac_scheduler_steps: 50000
 
-  critic_lr: 0.0003 # Keep same as reach
-  critic_lr_min: 0.0001
-  cr_scheduler_steps: 60000 # Slightly longer schedule
+  critic_lr: 0.0005
+  critic_lr_min: 0.0005
+  cr_scheduler_steps: 50000
 
-  alpha_lr: 0.0003
+  alpha_lr: 0.0001
+  alpha_min: 0.05
+  alpha_min_steps: 8000
 
   buffer_type: "HER"
   max_len: 1000000
   alpha: 0.6
 
-  batch_size: 512 # Keep same as reach - stability is key
+  batch_size: 512
   gamma: 0.98
   ac_update_freq: 1
 
@@ -44,3 +46,6 @@ agent:
 
   k_future: 4
   max_eps_len: 50
+
+g_normalize: false
+obs_normalize: true

@@ -44,3 +44,6 @@ agent:
 
   k_future: 4
   max_eps_len: 50
+
+g_normalize: false
+obs_normalize: true
