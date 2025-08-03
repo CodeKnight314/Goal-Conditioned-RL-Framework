@@ -4,7 +4,6 @@ from collections import deque
 from typing import Optional, Any
 import cv2
 import gymnasium as gym
-import gymnasium_robotics
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -74,7 +73,6 @@ class GoalEnvHER:
         self.g_normalize = self.config.g_normalize
         self.obs_normalize = self.config.obs_normalize
 
-        gym.register_envs(gymnasium_robotics)
         self.env = gym.vector.AsyncVectorEnv(
             [
                 lambda: TimeFeatureWrapperDictObs(gym.make(env_id))
