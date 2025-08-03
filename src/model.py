@@ -16,8 +16,7 @@ class Actor(nn.Module):
             layers.extend(
                 [
                     nn.Linear(current_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
-                    nn.ReLU(),
+                    nn.LeakyReLU(),
                 ]
             )
             current_dim = hidden_dim
@@ -56,8 +55,7 @@ class Critic(nn.Module):
             layers.extend(
                 [
                     nn.Linear(current_dim, hidden_dim),
-                    nn.BatchNorm1d(hidden_dim),
-                    nn.ReLU(),
+                    nn.LeakyReLU(),
                 ]
             )
             current_dim = hidden_dim
