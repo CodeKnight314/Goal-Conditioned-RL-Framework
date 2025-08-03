@@ -1,4 +1,4 @@
-# Panda Manipulation RL
+# Goal Conditioned RL Framework
 
 <table align="center">
   <tr>
@@ -39,12 +39,12 @@ Weights for DDPG are available under `resources/DDPG` for testing/evaluation.
 
 1.  Clone the repository:
     ```bash
-    git clone https://github.com/CodeKnight314/panda-manipulation-RL.git
+    git clone https://github.com/CodeKnight314/Goal-Conditioned-RL-Framework.git
     ```
 2.  Install necessary python packagaes via `pip`:
 
     ```bash
-    cd panda-manipulation-RL/
+    cd Goal-Conditioned-RL-Framework/
     pip install -r requirements.txt
     ```
 
